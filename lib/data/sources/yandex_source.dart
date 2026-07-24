@@ -17,7 +17,7 @@ import '../../domain/music_source.dart';
 /// ⚠️ Самый хрупкий источник: нарушает ToS, риск блокировки аккаунта,
 /// схема подписи может измениться.
 class YandexSource implements MusicSource {
-  YandexSource(this._dio, {String? token}) : _token = token;
+  YandexSource(this._dio, {String? token}) : _token = _clean(token);
 
   final Dio _dio;
   String? _token;
@@ -26,52 +26,100 @@ class YandexSource implements MusicSource {
   // Соль для подписи download-info (публично известная).
   static const _signSalt = 'XGRlBW9FXlekgbPrRHuSiA';
 
+  /// Токен из копипаста часто приходит с пробелами/переводом строки на концах
+  /// (как и у VK, см. VkSource._clean) — если их не срезать, они попадают в
+  /// заголовок Authorization, и Яндекс отвечает 401 на любой запрос, хотя в
+  /// Настройках токен выглядит заданным.
+  static String? _clean(String? t) {
+    final v = t?.trim();
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
   @override
   SourceType get type => SourceType.yandex;
 
   int? _uid;
 
   void setToken(String? token) {
-    _token = token;
+    _token = _clean(token);
     _uid = null;
   }
 
   Future<int> _ensureUid() async {
     if (_uid != null) return _uid!;
-    final r = await _dio.get('$_base/account/status', options: _opts);
-    _uid = (r.data['result']?['account']?['uid'] as num).toInt();
-    return _uid!;
+    try {
+      final r = await _dio.get('$_base/account/status', options: _opts);
+      _uid = (r.data['result']?['account']?['uid'] as num).toInt();
+      return _uid!;
+    } catch (e) {
+      final why = _describeAuthError(e);
+      Diagnostics.instance.warn('ya.uid', why);
+      throw SourceException(type, why);
+    }
   }
 
   /// Список плейлистов пользователя (для импорта).
   Future<List<({int kind, String title, int count})>> userPlaylists() async {
     _requireToken();
     final uid = await _ensureUid();
-    final r =
-        await _dio.get('$_base/users/$uid/playlists/list', options: _opts);
-    final list = (r.data['result'] as List? ?? []);
-    return list
-        .whereType<Map>()
-        .map((e) => (
-              kind: (e['kind'] as num).toInt(),
-              title: e['title'] as String? ?? 'Плейлист',
-              count: (e['trackCount'] as num?)?.toInt() ?? 0,
-            ))
-        .toList();
+    try {
+      final r =
+          await _dio.get('$_base/users/$uid/playlists/list', options: _opts);
+      final list = (r.data['result'] as List? ?? []);
+      return list
+          .whereType<Map>()
+          .map((e) => (
+                kind: (e['kind'] as num).toInt(),
+                title: e['title'] as String? ?? 'Плейлист',
+                count: (e['trackCount'] as num?)?.toInt() ?? 0,
+              ))
+          .toList();
+    } on SourceException {
+      rethrow;
+    } catch (e) {
+      final why = _describeAuthError(e);
+      Diagnostics.instance.warn('ya.playlists', why);
+      throw SourceException(type, why);
+    }
   }
 
   /// Треки плейлиста пользователя по его kind.
   Future<List<Track>> playlistTracks(int kind) async {
     _requireToken();
     final uid = await _ensureUid();
-    final r =
-        await _dio.get('$_base/users/$uid/playlists/$kind', options: _opts);
-    final tracks = (r.data['result']?['tracks'] as List? ?? []);
-    return tracks
-        .map((e) => (e as Map)['track'])
-        .whereType<Map>()
-        .map((e) => toTrack(e.cast<String, dynamic>()))
-        .toList();
+    try {
+      final r =
+          await _dio.get('$_base/users/$uid/playlists/$kind', options: _opts);
+      final tracks = (r.data['result']?['tracks'] as List? ?? []);
+      return tracks
+          .map((e) => (e as Map)['track'])
+          .whereType<Map>()
+          .map((e) => toTrack(e.cast<String, dynamic>()))
+          .toList();
+    } on SourceException {
+      rethrow;
+    } catch (e) {
+      final why = _describeAuthError(e);
+      Diagnostics.instance.warn('ya.playlistTracks', '$kind: $why');
+      throw SourceException(type, why);
+    }
+  }
+
+  /// Внятное сообщение для сбоев импорта плейлистов. 401/403 здесь почти
+  /// всегда значит «токен просрочен/отозван», а не баг приложения — сырой
+  /// текст DioException (как раньше без этой обёртки) этого не объясняет и
+  /// выглядит как «приложение сломано», хотя токен просто нужно перевыпустить.
+  static String _describeAuthError(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      if (code == 401 || code == 403) {
+        return 'токен недействителен или истёк — получите новый в Настройках';
+      }
+      final body = e.response?.data;
+      final b = (body ?? e.message)?.toString() ?? e.type.name;
+      return 'ошибка сети (${code ?? '—'}: ${b.length > 200 ? '${b.substring(0, 200)}…' : b})';
+    }
+    return '$e';
   }
 
   @override
