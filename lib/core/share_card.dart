@@ -44,7 +44,7 @@ Future<void> shareTrackCard(
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(f.path)],
-        text: '${track.artist} — ${track.title} · Roundds',
+        text: '${track.artist} — ${track.title} · vvavve',
       ),
     );
   } catch (_) {
@@ -147,7 +147,7 @@ class _Card extends StatelessWidget {
             children: [
               Icon(Icons.music_note, color: accent, size: 40),
               const SizedBox(width: 10),
-              const Text('Roundds',
+              const Text('vvavve',
                   style: TextStyle(
                       color: Colors.white54,
                       fontSize: 34,

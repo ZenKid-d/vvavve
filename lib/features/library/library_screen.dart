@@ -688,7 +688,7 @@ Future<void> _exportPlaylist(PlaylistX pl) async {
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path)],
-        text: 'Roundds — плейлист «${pl.name}»',
+        text: 'vvavve — плейлист «${pl.name}»',
       ),
     );
   } catch (_) {/* отмена/ошибка шаринга не критична */}

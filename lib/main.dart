@@ -90,7 +90,7 @@ Future<void> main() async {
     builder: () => RoundsAudioHandler(aggregator),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.roundds.audio',
-      androidNotificationChannelName: 'Roundds',
+      androidNotificationChannelName: 'vvavve',
       androidNotificationOngoing: true,
     ),
   );

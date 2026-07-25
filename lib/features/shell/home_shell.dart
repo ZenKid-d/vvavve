@@ -19,7 +19,7 @@ enum AppSection { home, search, library, settings }
 
 extension AppSectionX on AppSection {
   String get title => switch (this) {
-        AppSection.home => 'Roundds',
+        AppSection.home => 'vvavve',
         AppSection.search => 'Поиск',
         AppSection.library => 'Медиатека',
         AppSection.settings => 'Настройки',

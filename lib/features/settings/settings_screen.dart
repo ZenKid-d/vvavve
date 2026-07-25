@@ -339,7 +339,7 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path)],
-        text: 'Roundds — резервная копия библиотеки',
+        text: 'vvavve — резервная копия библиотеки',
       ),
     );
   } catch (e) {
@@ -916,7 +916,7 @@ class _About extends ConsumerWidget {
       child: FutureBuilder<String>(
         future: ref.read(updateServiceProvider).currentVersion(),
         builder: (_, snap) => Text(
-          'Roundds ${snap.data ?? ''} · не для Google Play',
+          'vvavve ${snap.data ?? ''} · не для Google Play',
           style: TextStyle(fontSize: 11, color: AppColors.white45),
         ),
       ),

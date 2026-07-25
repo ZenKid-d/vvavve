@@ -35,7 +35,7 @@ class AppDrawer extends ConsumerWidget {
                   children: [
                     Icon(Icons.graphic_eq, color: accent),
                     const SizedBox(width: 9),
-                    const Text('Roundds',
+                    const Text('vvavve',
                         style: TextStyle(
                             fontSize: 20, fontWeight: FontWeight.w600)),
                   ],
