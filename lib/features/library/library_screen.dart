@@ -9,6 +9,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/album_menu.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -16,8 +17,10 @@ import '../../core/widgets/artwork.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../core/widgets/track_download_status.dart';
+import '../../domain/models/album_result.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/track.dart';
+import '../album/album_screen.dart';
 import '../common/track_list_screen.dart';
 
 /// Строка фильтра медиатеки (по названию/артисту), в нижнем регистре.
@@ -484,35 +487,107 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
+bool _matchAlbum(AlbumResult a, String q) =>
+    q.isEmpty ||
+    a.title.toLowerCase().contains(q) ||
+    a.artist.toLowerCase().contains(q);
+
 class _LikedView extends ConsumerWidget {
   const _LikedView();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final q = ref.watch(_libQueryProvider);
-    final liked =
-        ref.watch(libraryProvider).liked.where((t) => _matchTrack(t, q)).toList();
-    if (liked.isEmpty) {
+    final lib = ref.watch(libraryProvider);
+    final liked = lib.liked.where((t) => _matchTrack(t, q)).toList();
+    final likedAlbums =
+        lib.likedAlbums.where((a) => _matchAlbum(a, q)).toList();
+    if (liked.isEmpty && likedAlbums.isEmpty) {
       return Center(
         child: Text(q.isEmpty ? 'Нет лайкнутых треков' : 'Ничего не найдено',
             style: TextStyle(color: AppColors.white45)),
       );
     }
     return ListView.builder(
-      itemCount: liked.length,
-      itemBuilder: (_, i) => TrackRow(
-        track: liked[i],
-        onTap: () => playTrack(ref, context, liked[i], queue: liked),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TrackDownloadStatus(liked[i]),
-            IconButton(
-              icon: const Icon(Icons.favorite, color: AppColors.danger),
-              onPressed: () => ref.read(libraryProvider).toggleLike(liked[i]),
-            ),
-          ],
+      itemCount: liked.length + 1,
+      itemBuilder: (_, i) {
+        if (i == 0) return _LikedAlbumsRow(likedAlbums);
+        final t = liked[i - 1];
+        return TrackRow(
+          track: t,
+          onTap: () => playTrack(ref, context, t, queue: liked),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TrackDownloadStatus(t),
+              IconButton(
+                icon: const Icon(Icons.favorite, color: AppColors.danger),
+                onPressed: () => ref.read(libraryProvider).toggleLike(t),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LikedAlbumsRow extends ConsumerWidget {
+  const _LikedAlbumsRow(this.albums);
+  final List<AlbumResult> albums;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (albums.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Text('Альбомы',
+              style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.white60,
+                  fontWeight: FontWeight.w500)),
         ),
-      ),
+        SizedBox(
+          height: 168,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: albums.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) {
+              final a = albums[i];
+              return SizedBox(
+                width: 120,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => AlbumScreen(seed: a.toSeedTrack()))),
+                  onLongPress: () => showAlbumMenu(context, ref, a),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Artwork(a.artworkUrl, size: 120, seed: a.uid),
+                      const SizedBox(height: 6),
+                      Text(a.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w500)),
+                      Text(a.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11.5, color: AppColors.white45)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const Divider(height: 14),
+      ],
     );
   }
 }

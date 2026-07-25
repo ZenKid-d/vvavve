@@ -39,4 +39,43 @@ class AlbumResult {
         source: source,
         extra: {'albumId': id},
       );
+
+  /// Восстанавливает идентичность альбома из «зерна» [AlbumScreen] — нужен
+  /// для лайка/дизлайка, когда экран открыли не из поиска (там albumId в
+  /// extra есть), а из меню обычного трека («Открыть альбом»), где известны
+  /// только артист/название/источник. В этом случае id — нормализованный
+  /// ключ «артист|альбом» (стабильный для одного и того же альбома между
+  /// открытиями, но не привязанный к реальному id источника).
+  factory AlbumResult.fromSeed(Track seed) {
+    final albumId = seed.extra['albumId'] as String?;
+    final title =
+        (seed.album != null && seed.album!.isNotEmpty) ? seed.album! : seed.title;
+    final id = albumId ??
+        '${seed.artist.trim().toLowerCase()}|${title.trim().toLowerCase()}';
+    return AlbumResult(
+      id: id,
+      title: title,
+      artist: seed.artist,
+      source: seed.source,
+      artworkUrl: seed.artworkUrl,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'artist': artist,
+        'source': source.id,
+        'artworkUrl': artworkUrl,
+        'trackCount': trackCount,
+      };
+
+  factory AlbumResult.fromJson(Map<String, dynamic> j) => AlbumResult(
+        id: j['id'] as String,
+        title: j['title'] as String? ?? '',
+        artist: j['artist'] as String? ?? '',
+        source: SourceTypeX.fromId(j['source'] as String? ?? 'youtube'),
+        artworkUrl: j['artworkUrl'] as String?,
+        trackCount: (j['trackCount'] as num?)?.toInt(),
+      );
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../domain/models/album_result.dart';
 import '../domain/models/playlist.dart';
 import '../domain/models/track.dart';
 import 'diagnostics.dart';
@@ -23,6 +24,8 @@ class LibraryController extends ChangeNotifier {
   final List<Track> _history = [];
   final List<PlaylistX> _playlists = [];
   final List<Track> _liked = [];
+  final List<AlbumResult> _likedAlbums = [];
+  final List<AlbumResult> _dislikedAlbums = [];
   final Map<String, Track> _statTrack = {};
   final Map<String, int> _statCount = {};
   final Set<String> _blacklist = {}; // артисты в нижнем регистре
@@ -43,6 +46,8 @@ class LibraryController extends ChangeNotifier {
   List<Track> get history => List.unmodifiable(_history);
   List<PlaylistX> get playlists => List.unmodifiable(_playlists);
   List<Track> get liked => List.unmodifiable(_liked);
+  List<AlbumResult> get likedAlbums => List.unmodifiable(_likedAlbums);
+  List<AlbumResult> get dislikedAlbums => List.unmodifiable(_dislikedAlbums);
 
   // --- Подписки на артистов ---
   final List<String> _followed = []; // отображаемые имена, новые сверху
@@ -131,6 +136,20 @@ class LibraryController extends ChangeNotifier {
         ..clear()
         ..addAll((jsonDecode(l) as List)
             .map((e) => Track.fromJson((e as Map).cast<String, dynamic>())));
+    }
+    final la = _prefs.getString('liked_albums');
+    if (la != null) {
+      _likedAlbums
+        ..clear()
+        ..addAll((jsonDecode(la) as List).map(
+            (e) => AlbumResult.fromJson((e as Map).cast<String, dynamic>())));
+    }
+    final da = _prefs.getString('disliked_albums');
+    if (da != null) {
+      _dislikedAlbums
+        ..clear()
+        ..addAll((jsonDecode(da) as List).map(
+            (e) => AlbumResult.fromJson((e as Map).cast<String, dynamic>())));
     }
     _blacklist
       ..clear()
@@ -229,6 +248,48 @@ class LibraryController extends ChangeNotifier {
         'liked', jsonEncode(_liked.map((e) => e.toJson()).toList()));
     notifyListeners();
   }
+
+  // --- Лайки/дизлайки альбомов ---
+
+  bool isAlbumLiked(AlbumResult a) => _likedAlbums.any((e) => e.uid == a.uid);
+  bool isAlbumDisliked(AlbumResult a) =>
+      _dislikedAlbums.any((e) => e.uid == a.uid);
+
+  /// Лайк отменяет дизлайк того же альбома — противоречивое состояние
+  /// (лайкнут и дизлайкнут одновременно) не нужно.
+  Future<void> toggleLikeAlbum(AlbumResult a) async {
+    if (isAlbumLiked(a)) {
+      _likedAlbums.removeWhere((e) => e.uid == a.uid);
+    } else {
+      _likedAlbums.insert(0, a);
+      if (isAlbumDisliked(a)) {
+        _dislikedAlbums.removeWhere((e) => e.uid == a.uid);
+        await _persistDislikedAlbums();
+      }
+    }
+    await _persistLikedAlbums();
+    notifyListeners();
+  }
+
+  Future<void> toggleDislikeAlbum(AlbumResult a) async {
+    if (isAlbumDisliked(a)) {
+      _dislikedAlbums.removeWhere((e) => e.uid == a.uid);
+    } else {
+      _dislikedAlbums.insert(0, a);
+      if (isAlbumLiked(a)) {
+        _likedAlbums.removeWhere((e) => e.uid == a.uid);
+        await _persistLikedAlbums();
+      }
+    }
+    await _persistDislikedAlbums();
+    notifyListeners();
+  }
+
+  Future<void> _persistLikedAlbums() => _prefs.setString('liked_albums',
+      jsonEncode(_likedAlbums.map((e) => e.toJson()).toList()));
+
+  Future<void> _persistDislikedAlbums() => _prefs.setString('disliked_albums',
+      jsonEncode(_dislikedAlbums.map((e) => e.toJson()).toList()));
 
   Future<void> pushHistory(Track t) async {
     _history.removeWhere((e) => e.uid == t.uid);

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/album_menu.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -576,6 +577,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => AlbumScreen(seed: a.toSeedTrack()))),
+                  onLongPress: () => showAlbumMenu(context, ref, a),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

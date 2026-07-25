@@ -6,6 +6,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
+import '../../domain/models/album_result.dart';
 import '../../domain/models/track.dart';
 import '../../l10n/gen/app_localizations.dart';
 
@@ -28,10 +29,40 @@ class AlbumScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final title =
         (seed.album ?? '').isNotEmpty ? seed.album! : l10n.albumFallbackTitle;
+    final album = AlbumResult.fromSeed(seed);
+    final lib = ref.watch(libraryProvider);
+    final liked = lib.isAlbumLiked(album);
+    final disliked = lib.isAlbumDisliked(album);
     return Scaffold(
       appBar: AppBar(
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            icon: Icon(disliked ? Icons.thumb_down : Icons.thumb_down_outlined,
+                color: disliked ? AppColors.warning : null),
+            tooltip: disliked ? 'Убрать дизлайк' : 'Не нравится',
+            onPressed: () =>
+                ref.read(libraryProvider).toggleDislikeAlbum(album),
+          ),
+          IconButton(
+            icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
+                color: liked ? AppColors.danger : null),
+            tooltip: liked ? 'Убрать из избранного' : 'В избранное',
+            onPressed: () => ref.read(libraryProvider).toggleLikeAlbum(album),
+          ),
+          IconButton(
+            icon: const Icon(Icons.download),
+            tooltip: 'Скачать альбом',
+            onPressed: () {
+              final list = tracks.value;
+              final downloads = ref.read(downloadsProvider);
+              if (list != null && list.isNotEmpty && !downloads.playlistBusy) {
+                downloads.downloadPlaylist(title, list);
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Скачивание «$title»…')));
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.radio),
             tooltip: l10n.albumRadioTooltip,
