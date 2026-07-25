@@ -7,6 +7,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
+import '../../domain/models/album_result.dart';
 import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
@@ -104,6 +105,10 @@ class YoutubeMusicSource implements MusicSource {
 
   /// Фильтр результатов «Songs» (из ytmusicapi).
   static const _songsParam = 'EgWKAQIIAWoKEAkQBRAKEAMQBA==';
+
+  /// Фильтр результатов «Albums» — тот же шаблон, что у [_songsParam], со
+  /// сменой 2-символьного кода типа (из ytmusicapi: songs="II", albums="IY").
+  static const _albumsParam = 'EgWKAQIYAWoKEAkQBRAKEAMQBA==';
 
   Future<void> _ensureMusicKeys() async {
     if (_musicKey != null) return;
@@ -209,6 +214,127 @@ class YoutubeMusicSource implements MusicSource {
 
     walk(resp.data);
     return out;
+  }
+
+  /// Поиск альбомов (фильтр «Albums»). Элементы выдачи — не треки (нет
+  /// videoId, вместо него browseId страницы альбома), поэтому [mrlirToTrack]
+  /// им не подходит — разбирает отдельный [mrlirToAlbum].
+  Future<List<AlbumResult>> searchAlbums(String query, {int limit = 10}) async {
+    try {
+      await _ensureMusicKeys();
+      if (_musicKey == null) return const [];
+      final resp = await _dio.post(
+        'https://music.youtube.com/youtubei/v1/search',
+        queryParameters: {'key': _musicKey},
+        data: {
+          'context': {
+            'client': {
+              'clientName': 'WEB_REMIX',
+              'clientVersion': _musicVer,
+              'hl': 'en',
+              'gl': 'US',
+            }
+          },
+          'query': query,
+          'params': _albumsParam,
+        },
+        options: Options(headers: {
+          'User-Agent': _ua,
+          'Content-Type': 'application/json',
+          'Origin': 'https://music.youtube.com',
+          'Referer': 'https://music.youtube.com/',
+        }),
+      );
+      final out = <AlbumResult>[];
+      final seen = <String>{};
+      void walk(dynamic n) {
+        if (out.length >= limit) return;
+        if (n is Map) {
+          final r = n['musicResponsiveListItemRenderer'];
+          if (r is Map) {
+            final a = mrlirToAlbum(r);
+            if (a != null && seen.add(a.id)) out.add(a);
+          }
+          for (final v in n.values) {
+            walk(v);
+          }
+        } else if (n is List) {
+          for (final v in n) {
+            walk(v);
+          }
+        }
+      }
+
+      walk(resp.data);
+      return out;
+    } catch (e) {
+      // Сетевой сбой альбомного поиска не должен ронять весь поиск —
+      // молча деградируем до пустого списка (треки при этом ищутся отдельно).
+      Diagnostics.instance.warn('yt.searchAlbums', '«$query»: $e');
+      return const [];
+    }
+  }
+
+  /// Разбирает musicResponsiveListItemRenderer выдачи «Albums» в [AlbumResult].
+  /// В отличие от [mrlirToTrack] тут нет videoId — используется browseId
+  /// страницы альбома.
+  @visibleForTesting
+  static AlbumResult? mrlirToAlbum(Map r) {
+    final titleRun = dig(r, [
+      'flexColumns',
+      0,
+      'musicResponsiveListItemFlexColumnRenderer',
+      'text',
+      'runs',
+      0
+    ]);
+    final title = dig(titleRun, ['text']) as String?;
+    final browseId = (dig(r, ['navigationEndpoint', 'browseEndpoint', 'browseId']) ??
+        dig(titleRun, ['navigationEndpoint', 'browseEndpoint', 'browseId'])) as String?;
+    if (title == null || browseId == null) return null;
+
+    final runs = dig(r, [
+      'flexColumns',
+      1,
+      'musicResponsiveListItemFlexColumnRenderer',
+      'text',
+      'runs'
+    ]);
+    final texts = <String>[];
+    if (runs is List) {
+      for (final run in runs) {
+        final t = (dig(run, ['text']) ?? '').toString().trim();
+        if (t.isEmpty || t == '•') continue;
+        texts.add(t);
+      }
+    }
+    // Строка подписи — «Album • Артист • Год»/«EP • Артист» и т.п.: отсекаем
+    // тип релиза и год выпуска, первое, что осталось — артист.
+    const releaseTypes = {'album', 'single', 'ep'};
+    final yearRe = RegExp(r'^\d{4}$');
+    var artist = 'YouTube Music';
+    for (final t in texts) {
+      if (releaseTypes.contains(t.toLowerCase())) continue;
+      if (yearRe.hasMatch(t)) continue;
+      artist = t;
+      break;
+    }
+
+    String? art;
+    final thumbs = dig(
+        r, ['thumbnail', 'musicThumbnailRenderer', 'thumbnail', 'thumbnails']);
+    if (thumbs is List && thumbs.isNotEmpty) {
+      final url = dig(thumbs.last, ['url'])?.toString();
+      art = url?.replaceAll(RegExp(r'=w\d+-h\d+'), '=w720-h720');
+    }
+
+    return AlbumResult(
+      id: browseId,
+      title: title,
+      artist: artist,
+      artworkUrl: art,
+      source: SourceType.youtube,
+    );
   }
 
   // Типы элементов в подписи нефильтрованной выдачи YT Music (первый ран):

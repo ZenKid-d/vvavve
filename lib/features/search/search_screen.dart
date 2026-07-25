@@ -10,10 +10,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/artwork.dart';
 import '../../core/widgets/track_card.dart';
+import '../../data/sources/soundcloud_source.dart';
 import '../../data/sources/youtube_music_source.dart';
+import '../../domain/models/album_result.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
+import '../album/album_screen.dart';
 import '../artist/artist_screen.dart';
 
 final _queryProvider = StateProvider<String>((ref) => '');
@@ -209,6 +213,33 @@ class _SearchPager extends StateNotifier<_SearchState> {
     return aggregator.search(q, perSource: _baseSearchLimit + page * _pageStep);
   }
 }
+
+/// Поиск альбомов по submitted-запросу (не пагинируется — короткая выдача).
+/// Нативно умеют только YouTube Music и SoundCloud, поэтому при фильтре на
+/// Яндекс/VK альбомы не ищем (пустой результат без похода в сеть).
+final _albumsProvider = FutureProvider.autoDispose<List<AlbumResult>>((ref) async {
+  final q = ref.watch(_queryProvider).trim();
+  if (q.isEmpty || extractYoutubeVideoId(q) != null) return const [];
+  final enabled = ref.watch(settingsProvider).enabledSources;
+  final rawFilter = ref.watch(_filterProvider);
+  final filter =
+      (rawFilter != null && enabled.contains(rawFilter)) ? rawFilter : null;
+  if (filter != null &&
+      filter != SourceType.youtube &&
+      filter != SourceType.soundcloud) {
+    return const [];
+  }
+  final aggregator = ref.read(aggregatorProvider);
+  if (filter == SourceType.youtube) {
+    final src = aggregator.sourceFor(SourceType.youtube);
+    return src is YoutubeMusicSource ? src.searchAlbums(q) : const [];
+  }
+  if (filter == SourceType.soundcloud) {
+    final src = aggregator.sourceFor(SourceType.soundcloud);
+    return src is SoundcloudSource ? src.searchAlbums(q) : const [];
+  }
+  return aggregator.searchAlbums(q);
+});
 
 /// История поиска (последние запросы), хранится в SharedPreferences.
 final _recentSearchesProvider =
@@ -433,7 +464,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _resultsList(List<Track> tracks, String submitted,
       {required bool loadingFooter}) {
     if (submitted.isEmpty) return _recentsOrHint();
-    if (tracks.isEmpty) return _hint('Ничего не найдено.');
+    final albums = ref.watch(_albumsProvider).value ?? const <AlbumResult>[];
+    if (tracks.isEmpty && albums.isEmpty) return _hint('Ничего не найдено.');
     // Уникальные артисты из результатов (для перехода на их страницы).
     final artists = <String>[];
     final seen = <String>{};
@@ -445,7 +477,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       itemCount: tracks.length + 1 + (loadingFooter ? 1 : 0),
       itemBuilder: (_, i) {
-        if (i == 0) return _artistsRow(artists);
+        if (i == 0) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _albumsRow(albums),
+              _artistsRow(artists),
+            ],
+          );
+        }
         final idx = i - 1;
         if (idx >= tracks.length) {
           return const Padding(
@@ -505,6 +545,81 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             onTap: () => _submit(q),
           ),
+      ],
+    );
+  }
+
+  Widget _albumsRow(List<AlbumResult> albums) {
+    if (albums.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Text('Альбомы',
+              style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.white60,
+                  fontWeight: FontWeight.w500)),
+        ),
+        SizedBox(
+          height: 168,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: albums.take(20).length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, i) {
+              final a = albums[i];
+              return SizedBox(
+                width: 120,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => AlbumScreen(seed: a.toSeedTrack()))),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Stack(
+                        children: [
+                          Artwork(a.artworkUrl, size: 120, seed: a.uid),
+                          Positioned(
+                            right: 4,
+                            bottom: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: a.source.color,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(a.source.shortLabel,
+                                  style: TextStyle(
+                                      fontSize: 9,
+                                      color: a.source.onColor,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(a.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w500)),
+                      Text(a.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11.5, color: AppColors.white45)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const Divider(height: 14),
       ],
     );
   }
