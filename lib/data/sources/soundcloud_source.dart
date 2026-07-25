@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
+import '../../domain/models/album_result.dart';
 import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
 import '../../domain/models/source_type.dart';
@@ -127,6 +128,31 @@ class SoundcloudSource implements MusicSource {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
       Diagnostics.instance.warn('sc.search', '«$query»: $e');
       throw SourceException(type, 'ошибка поиска ($e)');
+    }
+  }
+
+  /// Поиск альбомов (`kind: playlist`, релиз с `is_album: true` — EP/сингл/
+  /// компиляция размечены так же). Сетевой сбой не фатален — молча отдаём
+  /// пустой список, треки при этом ищутся отдельным запросом.
+  Future<List<AlbumResult>> searchAlbums(String query, {int limit = 10}) async {
+    try {
+      await _ensureClientId();
+      final r = await _dio.get('$_apiBase/search/albums',
+          queryParameters: {
+            'q': query,
+            'client_id': _clientId,
+            'limit': limit,
+          },
+          options: Options(headers: _authHeaders));
+      final list = (r.data['collection'] as List? ?? []);
+      return list
+          .whereType<Map>()
+          .map((e) => toAlbum(e.cast<String, dynamic>()))
+          .whereType<AlbumResult>()
+          .toList();
+    } catch (e) {
+      Diagnostics.instance.warn('sc.searchAlbums', '«$query»: $e');
+      return const [];
     }
   }
 
@@ -280,6 +306,25 @@ class SoundcloudSource implements MusicSource {
         // исполнителя: аватар/баннер/подписчики), см. artistProfile().
         if (user?['id'] != null) 'scUserId': user!['id'],
       },
+    );
+  }
+
+  @visibleForTesting
+  static AlbumResult? toAlbum(Map<String, dynamic> j) {
+    if (j['kind'] != null && j['kind'] != 'playlist') return null;
+    final id = j['id'];
+    final title = j['title'] as String?;
+    if (id == null || title == null) return null;
+    final user = j['user'] as Map?;
+    String? art = j['artwork_url'] as String?;
+    art = art?.replaceAll('-large', '-t500x500');
+    return AlbumResult(
+      id: '$id',
+      title: title,
+      artist: user?['username'] as String? ?? 'SoundCloud',
+      artworkUrl: art,
+      trackCount: (j['track_count'] as num?)?.toInt(),
+      source: SourceType.soundcloud,
     );
   }
 

@@ -17,7 +17,7 @@ class RoundedsApp extends ConsumerWidget {
     final ts = ref.watch(themeSettingsProvider);
 
     return MaterialApp.router(
-      title: 'Roundds',
+      title: 'vvavve',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(
         accent: accent,

@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'providers.dart';
 import 'theme/accent_provider.dart';
+import 'widgets/wordmark.dart';
 import '../domain/models/track.dart';
 
 /// Рендерит красивую карточку трека (обложка + название) в PNG и открывает
@@ -44,7 +45,7 @@ Future<void> shareTrackCard(
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(f.path)],
-        text: '${track.artist} — ${track.title} · Roundds',
+        text: '${track.artist} — ${track.title} · vvavve',
       ),
     );
   } catch (_) {
@@ -147,11 +148,8 @@ class _Card extends StatelessWidget {
             children: [
               Icon(Icons.music_note, color: accent, size: 40),
               const SizedBox(width: 10),
-              const Text('Roundds',
-                  style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w600)),
+              const Wordmark(
+                  fontSize: 34, fontWeight: FontWeight.w600, color: Colors.white54),
             ],
           ),
         ],

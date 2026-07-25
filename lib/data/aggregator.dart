@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../core/diagnostics.dart';
 import '../core/net/net_errors.dart';
 import '../domain/constants.dart';
+import '../domain/models/album_result.dart';
 import '../domain/models/artist_profile.dart';
 import '../domain/models/playable_stream.dart';
 import '../domain/models/source_type.dart';
@@ -133,6 +134,24 @@ class Aggregator {
     } finally {
       _searchInFlight.remove(key);
     }
+  }
+
+  /// Поиск альбомов по включённым источникам. Нативно умеют только YouTube
+  /// Music и SoundCloud (у Яндекса/VK альбом сейчас открывается только через
+  /// трек — см. [albumTracks]); остальные источники молча пропускаются.
+  Future<List<AlbumResult>> searchAlbums(String query, {int perSource = 10}) async {
+    final futures = <Future<List<AlbumResult>>>[];
+    final yt = _sources[SourceType.youtube];
+    if (yt is YoutubeMusicSource && _enabled.contains(SourceType.youtube)) {
+      futures.add(yt.searchAlbums(query, limit: perSource));
+    }
+    final sc = _sources[SourceType.soundcloud];
+    if (sc is SoundcloudSource && _enabled.contains(SourceType.soundcloud)) {
+      futures.add(sc.searchAlbums(query, limit: perSource));
+    }
+    if (futures.isEmpty) return const [];
+    final lists = await Future.wait(futures);
+    return [for (final l in lists) ...l];
   }
 
   Future<List<Track>> feed({int perSource = 12}) {

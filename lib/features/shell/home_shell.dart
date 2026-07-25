@@ -5,6 +5,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/mini_player.dart';
+import '../../core/widgets/wordmark.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
 import '../drawer/app_drawer.dart';
@@ -19,7 +20,7 @@ enum AppSection { home, search, library, settings }
 
 extension AppSectionX on AppSection {
   String get title => switch (this) {
-        AppSection.home => 'Roundds',
+        AppSection.home => 'vvavve',
         AppSection.search => 'Поиск',
         AppSection.library => 'Медиатека',
         AppSection.settings => 'Настройки',
@@ -99,7 +100,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         child: Column(
           children: [
             _TopBar(
-              title: _section.title,
+              title: _section == AppSection.home
+                  ? const Wordmark(fontSize: 17)
+                  : Text(_section.title,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w600)),
               showSearch: _section != AppSection.search,
               onSearch: () => setState(() => _section = AppSection.search),
             ),
@@ -210,7 +215,7 @@ class _TopBar extends StatelessWidget {
     required this.onSearch,
   });
 
-  final String title;
+  final Widget title;
   final bool showSearch;
   final VoidCallback onSearch;
 
@@ -226,14 +231,7 @@ class _TopBar extends StatelessWidget {
               onPressed: () => Scaffold.of(ctx).openDrawer(),
             ),
           ),
-          Expanded(
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 17, fontWeight: FontWeight.w600),
-            ),
-          ),
+          Expanded(child: Center(child: title)),
           showSearch
               ? IconButton(
                   icon: const Icon(Icons.search), onPressed: onSearch)
