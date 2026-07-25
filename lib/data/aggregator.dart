@@ -210,7 +210,32 @@ class Aggregator {
       }
     }
     final q = '${track.artist} ${track.album ?? ''}'.trim();
-    return q.isEmpty ? const [] : search(q);
+    if (q.isEmpty || src == null || !_enabled.contains(track.source)) {
+      return const [];
+    }
+    // Фолбэк-поиск — ТОЛЬКО в родном источнике трека и ТОЛЬКО треки того же
+    // артиста. Раньше искали через Aggregator.search по ВСЕМ источникам сразу
+    // без проверки артиста — в альбом подмешивались случайные совпадения по
+    // тексту запроса с других сервисов и чужих исполнителей.
+    try {
+      final results = await src.search(q, limit: 50);
+      return results.where((t) => _sameArtist(track.artist, t.artist)).toList();
+    } catch (e) {
+      Diagnostics.instance
+          .warn('aggregator', 'albumTracks фолбэк-поиск «$q» упал: $e');
+      return const [];
+    }
+  }
+
+  /// Похож ли [got] на артиста [want] альбома — вхождение нормализованной
+  /// строки в любую сторону (feat./перестановка), иначе токенное сходство
+  /// по тому же порогу, что и артист-гейт в [RecsDedup.matchScore].
+  static bool _sameArtist(String want, String got) {
+    final a1 = RecsDedup.normalize(want);
+    final a2 = RecsDedup.normalize(got);
+    if (a1.isEmpty || a2.isEmpty) return false;
+    if (a1 == a2 || a2.contains(a1) || a1.contains(a2)) return true;
+    return RecsDedup.tokenSimilarity(want, got) >= 0.34;
   }
 
   /// Профиль исполнителя (аватар/баннер/подписчики/био) для страницы артиста.
