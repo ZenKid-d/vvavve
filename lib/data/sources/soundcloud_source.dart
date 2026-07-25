@@ -156,6 +156,64 @@ class SoundcloudSource implements MusicSource {
     }
   }
 
+  /// Точный треклист альбома по id плейлиста (из [searchAlbums]/[AlbumResult.id]).
+  /// `/playlists/{id}` отдаёт только первые ~5 треков с полными данными,
+  /// остальные — «заглушками» (id/kind без media/user) — их приходится
+  /// догружать батчем через `/tracks?ids=...`, иначе [toTrack] отбросит их
+  /// как невалидные.
+  Future<List<Track>> albumTracks(String albumId, {int limit = 200}) async {
+    await _ensureClientId();
+    try {
+      final r = await _dio.get('$_apiBase/playlists/$albumId',
+          queryParameters: {'client_id': _clientId},
+          options: Options(headers: _authHeaders));
+      final raw = ((r.data as Map)['tracks'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
+
+      final hydrated = <String, Map<String, dynamic>>{};
+      final stubIds = <String>[];
+      for (final t in raw) {
+        if (t.containsKey('media')) {
+          hydrated['${t['id']}'] = t;
+        } else {
+          stubIds.add('${t['id']}');
+        }
+      }
+      // SoundCloud ограничивает число id в одном батче — берём с запасом по 50.
+      for (var i = 0; i < stubIds.length; i += 50) {
+        final batch = stubIds.skip(i).take(50).join(',');
+        try {
+          final hr = await _dio.get('$_apiBase/tracks',
+              queryParameters: {'ids': batch, 'client_id': _clientId},
+              options: Options(headers: _authHeaders));
+          for (final e in (hr.data as List? ?? [])) {
+            if (e is Map) {
+              final m = e.cast<String, dynamic>();
+              hydrated['${m['id']}'] = m;
+            }
+          }
+        } catch (e) {
+          Diagnostics.instance
+              .warn('sc.albumTracks.hydrate', '$albumId: $e');
+        }
+      }
+
+      final out = <Track>[];
+      for (final t in raw) {
+        final full = hydrated['${t['id']}'];
+        if (full == null) continue; // не удалось догрузить — пропускаем
+        final track = toTrack(full);
+        if (track != null) out.add(track);
+      }
+      return out.take(limit).toList();
+    } catch (e) {
+      Diagnostics.instance.warn('sc.albumTracks', '$albumId: $e');
+      return const [];
+    }
+  }
+
   @override
   Future<List<Track>> feed({int limit = 20}) async {
     await _ensureClientId();

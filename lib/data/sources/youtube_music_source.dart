@@ -337,6 +337,85 @@ class YoutubeMusicSource implements MusicSource {
     );
   }
 
+  /// Точный треклист альбома по browseId (из [searchAlbums]/[AlbumResult.id]).
+  /// Как и остальной парсинг в этом файле — обходит ответ рекурсивно (не
+  /// зависит от точного пути вложенности, который YouTube меняет без
+  /// предупреждения), а не ищет по вычисленному raw-запросу.
+  ///
+  /// [albumArtist] подставляется, когда строка подписи трека на странице
+  /// альбома не содержит имени артиста (частый случай для альбома одного
+  /// исполнителя — там показывают только длительность) и [mrlirToTrack]
+  /// отдал дефолт 'YouTube'.
+  Future<List<Track>> albumTracks(String browseId,
+      {String? albumArtist, int limit = 200}) async {
+    try {
+      await _ensureMusicKeys();
+      if (_musicKey == null) return const [];
+      final resp = await _dio.post(
+        'https://music.youtube.com/youtubei/v1/browse',
+        queryParameters: {'key': _musicKey},
+        data: {
+          'context': {
+            'client': {
+              'clientName': 'WEB_REMIX',
+              'clientVersion': _musicVer,
+              'hl': 'en',
+              'gl': 'US',
+            }
+          },
+          'browseId': browseId,
+        },
+        options: Options(headers: {
+          'User-Agent': _ua,
+          'Content-Type': 'application/json',
+          'Origin': 'https://music.youtube.com',
+          'Referer': 'https://music.youtube.com/',
+        }),
+      );
+      final out = <Track>[];
+      final seen = <String>{};
+      void walk(dynamic n) {
+        if (out.length >= limit) return;
+        if (n is Map) {
+          final r = n['musicResponsiveListItemRenderer'];
+          if (r is Map) {
+            final t = mrlirToTrack(r);
+            if (t != null && seen.add(t.id)) {
+              final needsArtist = t.artist == 'YouTube' &&
+                  albumArtist != null &&
+                  albumArtist.isNotEmpty;
+              out.add(needsArtist
+                  ? Track(
+                      id: t.id,
+                      title: t.title,
+                      artist: albumArtist,
+                      album: t.album,
+                      artworkUrl: t.artworkUrl,
+                      duration: t.duration,
+                      source: t.source,
+                      extra: t.extra,
+                    )
+                  : t);
+            }
+          }
+          for (final v in n.values) {
+            walk(v);
+          }
+        } else if (n is List) {
+          for (final v in n) {
+            walk(v);
+          }
+        }
+      }
+
+      walk(resp.data);
+      return out;
+    } catch (e) {
+      Diagnostics.instance.warn('yt.albumTracks', '$browseId: $e');
+      return const [];
+    }
+  }
+
   // Типы элементов в подписи нефильтрованной выдачи YT Music (первый ран):
   // «Song»/«Video» — музыка, оставляем; «Episode»/«Podcast»/«Profile»/«Show»
   // — не музыка (но с videoId), отсекаем.

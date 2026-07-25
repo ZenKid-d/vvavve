@@ -3,9 +3,10 @@ import 'track.dart';
 
 /// Альбом из выдачи поиска (не трек) — YouTube Music и SoundCloud отдают
 /// альбомы отдельно от отдельных песен. Треклист открывается через
-/// [AlbumScreen] по «зерну» — синтетическому [Track] с [Track.album],
-/// который дальше идёт по обычному фолбэк-пути Aggregator.albumTracks
-/// (поиск «артист альбом» по включённым источникам).
+/// [AlbumScreen] по «зерну» — синтетическому [Track] с [Track.album] и
+/// albumId в extra, по которому Aggregator.albumTracks забирает точный
+/// треклист напрямую у источника (см. YoutubeMusicSource.albumTracks /
+/// SoundcloudSource.albumTracks).
 class AlbumResult {
   const AlbumResult({
     required this.id,
@@ -17,8 +18,7 @@ class AlbumResult {
   });
 
   /// Идентификатор альбома внутри источника (browseId у YT Music, id
-  /// плейлиста-альбома у SoundCloud). Сейчас используется только для дедупа —
-  /// нативного треклиста по этому id источники пока не отдают.
+  /// плейлиста-альбома у SoundCloud).
   final String id;
   final String title;
   final String artist;
@@ -28,8 +28,8 @@ class AlbumResult {
 
   String get uid => '${source.id}:album:$id';
 
-  /// Синтетический трек-«зерно» для [AlbumScreen]: даёт заголовку/фолбэк-поиску
-  /// артиста и название альбома, но сам не играбелен и в очередь не идёт.
+  /// Синтетический трек-«зерно» для [AlbumScreen]: даёт заголовок и albumId
+  /// для точного треклиста, но сам не играбелен и в очередь не идёт.
   Track toSeedTrack() => Track(
         id: 'album_$id',
         title: title,
@@ -37,5 +37,6 @@ class AlbumResult {
         album: title,
         artworkUrl: artworkUrl,
         source: source,
+        extra: {'albumId': id},
       );
 }

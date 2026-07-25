@@ -190,23 +190,31 @@ class Aggregator {
     }
   }
 
-  /// Треклист альбома, к которому принадлежит [track]. Нативно умеет Яндекс
-  /// (по albumId из extra); для остальных источников — фолбэк на поиск
-  /// «артист альбом», чтобы страница альбома всё равно что-то показала.
+  /// Треклист альбома, к которому принадлежит [track]. Нативно умеют Яндекс,
+  /// YouTube Music и SoundCloud (по albumId из extra — есть у альбомов из
+  /// searchAlbums, см. AlbumResult.toSeedTrack); для остальных случаев
+  /// (напр. «Открыть альбом» из меню обычного трека, где albumId не известен)
+  /// — фолбэк на поиск «артист альбом», чтобы страница всё равно что-то показала.
   Future<List<Track>> albumTracks(Track track) async {
     final albumId = track.extra['albumId'] as String?;
     final src = _sources[track.source];
-    if (src is YandexSource &&
-        albumId != null &&
-        _enabled.contains(SourceType.yandex)) {
+    if (albumId != null && _enabled.contains(track.source)) {
       try {
-        final tracks = await src.albumTracks(albumId);
-        if (tracks.isNotEmpty) return tracks;
+        List<Track>? tracks;
+        if (src is YandexSource) {
+          tracks = await src.albumTracks(albumId);
+        } else if (src is YoutubeMusicSource) {
+          tracks = await src.albumTracks(albumId, albumArtist: track.artist);
+        } else if (src is SoundcloudSource) {
+          tracks = await src.albumTracks(albumId);
+        }
+        if (tracks != null && tracks.isNotEmpty) return tracks;
       } catch (e) {
-        // Не упёрлись в треклист альбома — уходим в фолбэк-поиск, но причину
-        // (протухший токен, изменение API Яндекса) сохраняем для диагностики.
-        Diagnostics.instance
-            .warn('aggregator', 'albumTracks($albumId) Яндекса упал: $e');
+        // Не упёрлись в нативный треклист альбома — уходим в фолбэк-поиск, но
+        // причину (протухший токен, изменение API источника) сохраняем для
+        // диагностики.
+        Diagnostics.instance.warn(
+            'aggregator', 'albumTracks($albumId) ${track.source.id} упал: $e');
       }
     }
     final q = '${track.artist} ${track.album ?? ''}'.trim();
