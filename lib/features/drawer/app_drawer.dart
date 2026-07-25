@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/service_badge.dart';
+import '../../core/widgets/wordmark.dart';
 import '../../domain/models/source_type.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../shell/home_shell.dart';
@@ -35,9 +36,7 @@ class AppDrawer extends ConsumerWidget {
                   children: [
                     Icon(Icons.graphic_eq, color: accent),
                     const SizedBox(width: 9),
-                    const Text('vvavve',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w600)),
+                    const Wordmark(fontSize: 20),
                   ],
                 ),
               ),

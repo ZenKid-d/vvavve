@@ -16,6 +16,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/update_controller.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
+import '../../core/widgets/wordmark.dart';
 import '../../domain/models/source_type.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -915,9 +916,16 @@ class _About extends ConsumerWidget {
     return Center(
       child: FutureBuilder<String>(
         future: ref.read(updateServiceProvider).currentVersion(),
-        builder: (_, snap) => Text(
-          'vvavve ${snap.data ?? ''} · не для Google Play',
-          style: TextStyle(fontSize: 11, color: AppColors.white45),
+        builder: (_, snap) => Text.rich(
+          TextSpan(
+            style: TextStyle(fontSize: 11, color: AppColors.white45),
+            children: [
+              const TextSpan(
+                  text: 'vv', style: TextStyle(color: Wordmark.yellow)),
+              TextSpan(
+                  text: 'avve ${snap.data ?? ''} · не для Google Play'),
+            ],
+          ),
         ),
       ),
     );
