@@ -921,7 +921,9 @@ class _About extends ConsumerWidget {
             style: TextStyle(fontSize: 11, color: AppColors.white45),
             children: [
               const TextSpan(
-                  text: 'vv', style: TextStyle(color: Wordmark.yellow)),
+                  text: 'v', style: TextStyle(color: Wordmark.yellow)),
+              const TextSpan(
+                  text: 'v', style: TextStyle(color: Wordmark.purple)),
               TextSpan(
                   text: 'avve ${snap.data ?? ''} · не для Google Play'),
             ],

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// Логотип-надпись «vvavve»: первые две буквы «vv» — акцентный жёлтый,
-/// остальное — обычный цвет текста. Общий виджет, чтобы стиль не разъезжался
-/// между шапкой, боковым меню, карточкой шаринга и экраном «О приложении».
+/// Логотип-надпись «vvavve»: первая «v» — жёлтая, вторая «v» — фиолетовая
+/// (фирменный акцент), «avve» — обычный цвет текста. Общий виджет, чтобы
+/// стиль не разъезжался между шапкой, боковым меню, карточкой шаринга и
+/// экраном «О приложении».
 class Wordmark extends StatelessWidget {
   const Wordmark({
     super.key,
@@ -18,6 +19,7 @@ class Wordmark extends StatelessWidget {
   final Color? color;
 
   static const yellow = Color(0xFFFFD400);
+  static const purple = Color(0xFFB388FF);
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,8 @@ class Wordmark extends StatelessWidget {
     );
     return Text.rich(
       TextSpan(style: base, children: [
-        TextSpan(text: 'vv', style: base.copyWith(color: yellow)),
+        TextSpan(text: 'v', style: base.copyWith(color: yellow)),
+        TextSpan(text: 'v', style: base.copyWith(color: purple)),
         const TextSpan(text: 'avve'),
       ]),
     );
