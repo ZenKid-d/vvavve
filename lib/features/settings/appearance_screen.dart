@@ -117,7 +117,8 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
           ],
           _section('Вид плеера'),
           _Seg(
-            labels: const ['Винил', 'Обложка'],
+            // Порядок подписей строго по индексам PlayerView.
+            labels: const ['Винил', 'Обложка', 'CD'],
             index: ts.playerView.index,
             onTap: (i) => ctl.setPlayerView(PlayerView.values[i]),
           ),
