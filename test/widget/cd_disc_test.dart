@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:roundds/core/widgets/cd_disc.dart';
 
-// artworkUrl намеренно null — Artwork рисует градиент-заглушку и не ходит в сеть.
+// Диск рисуется целиком на канве — обложек и сетевых запросов здесь нет.
 Widget _wrap({
   required bool playing,
   String artist = 'Test Artist',
@@ -12,12 +12,10 @@ Widget _wrap({
       home: Scaffold(
         body: Center(
           child: CdDisc(
-            artworkUrl: null,
             isPlaying: playing,
             accent: const Color(0xFFB388FF),
             artist: artist,
             title: title,
-            seed: 'soundcloud:id1',
             size: 250,
           ),
         ),

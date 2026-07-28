@@ -116,12 +116,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                           child: switch (ts.playerView) {
                             PlayerView.cover => _coverArt(track, accent),
                             PlayerView.cd => CdDisc(
-                                artworkUrl: track.artworkUrl,
                                 isPlaying: pc.isPlaying && ts.spin,
                                 accent: accent,
                                 artist: track.artist,
                                 title: track.title,
-                                seed: track.uid,
                                 size: 250,
                               ),
                             PlayerView.vinyl => VinylDisc(

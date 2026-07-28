@@ -3,37 +3,31 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../theme/seed_palette.dart';
-import 'artwork.dart';
 
-/// Компакт-диск вместо винила: обложка «напечатана» на диске, поверх — радужные
-/// переливы, дорожки данных, прозрачное кольцо-хаб и печать с именем артиста
-/// (по верхней дуге) и названием трека (по нижней).
+/// «Голый» компакт-диск: непрозрачный зеркальный пластик с переливами, дорожки
+/// данных, кольцо-хаб и печать с именем артиста (по верхней дуге) и названием
+/// трека (по нижней). Обложка на диск НЕ печатается — как у болванки без
+/// полиграфии.
 ///
-/// Диск отличается от трека к треку сразу тремя независимыми признаками:
-/// обложкой, читаемыми надписями и оттенком переливов — он выводится из
+/// Цвет переливов ведётся от [accent]: в динамическом режиме темы он взят из
+/// обложки, так что диск попадает в палитру текущего трека. Угол блика — из
 /// [stableSeedHash] строки «артист — название», поэтому у одной и той же песни
 /// он один и тот же и после перезапуска приложения.
 class CdDisc extends StatefulWidget {
   const CdDisc({
     super.key,
-    required this.artworkUrl,
     required this.isPlaying,
     required this.accent,
     required this.artist,
     required this.title,
     this.size = 240,
-    this.seed,
   });
 
-  final String? artworkUrl;
   final bool isPlaying;
   final Color accent;
   final String artist;
   final String title;
   final double size;
-
-  /// Для стабильного цвета заглушки обложки (обычно uid трека).
-  final String? seed;
 
   @override
   State<CdDisc> createState() => _CdDiscState();
@@ -78,7 +72,6 @@ class _CdDiscState extends State<CdDisc> with SingleTickerProviderStateMixin {
         height: s,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.black,
           boxShadow: [
             BoxShadow(
               color: widget.accent
@@ -91,22 +84,13 @@ class _CdDiscState extends State<CdDisc> with SingleTickerProviderStateMixin {
         child: RotationTransition(
           turns: _c,
           child: RepaintBoundary(
-            child: ClipOval(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Artwork(widget.artworkUrl,
-                      size: s, radius: 999, seed: widget.seed),
-                  CustomPaint(
-                    painter: _CdPainter(
-                      accent: widget.accent,
-                      hash: stableSeedHash('${widget.artist} — ${widget.title}'),
-                      artist: widget.artist,
-                      title: widget.title,
-                      baseStyle: base,
-                    ),
-                  ),
-                ],
+            child: CustomPaint(
+              painter: _CdPainter(
+                accent: widget.accent,
+                hash: stableSeedHash('${widget.artist} — ${widget.title}'),
+                artist: widget.artist,
+                title: widget.title,
+                baseStyle: base,
               ),
             ),
           ),
@@ -116,7 +100,7 @@ class _CdDiscState extends State<CdDisc> with SingleTickerProviderStateMixin {
   }
 }
 
-/// Рисует «печать» CD поверх обложки: затемнение, переливы, дорожки, надписи,
+/// Рисует диск целиком: зеркальный пластик, переливы, дорожки, надписи,
 /// прозрачный хаб и центральное отверстие. Радиусы — в долях радиуса диска.
 class _CdPainter extends CustomPainter {
   _CdPainter({
@@ -148,48 +132,74 @@ class _CdPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final disc = Rect.fromCircle(center: center, radius: r);
 
-    _scrim(canvas, center, r, disc);
+    _metal(canvas, center, r, disc);
     _sheen(canvas, center, r, disc);
     _tracks(canvas, center, r);
     _print(canvas, center, r, d);
-    _hub(canvas, center, r, disc);
+    _hub(canvas, center, r);
   }
 
-  /// Затемнение обложки, чтобы белая печать читалась на любой картинке.
-  void _scrim(Canvas canvas, Offset center, double r, Rect disc) {
+  /// Зеркальный пластик: холодное серебро, чуть темнее к краю, плюс мягкая
+  /// диагональная засветка — на неё дальше ложится радуга.
+  void _metal(Canvas canvas, Offset center, double r, Rect disc) {
     canvas.drawCircle(
       center,
       r,
       Paint()
-        ..shader = RadialGradient(
+        ..shader = const RadialGradient(
           colors: [
-            Colors.black.withValues(alpha: 0.40),
-            Colors.black.withValues(alpha: 0.38),
-            Colors.black.withValues(alpha: 0.18),
+            Color(0xFFF2F5F7),
+            Color(0xFFDCE2E7),
+            Color(0xFFAFB8C0),
+            Color(0xFF8C959D),
           ],
-          stops: const [0.0, 0.70, 1.0],
+          stops: [0.0, 0.45, 0.86, 1.0],
+        ).createShader(disc),
+    );
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.55),
+            Colors.white.withValues(alpha: 0.0),
+            Colors.black.withValues(alpha: 0.12),
+          ],
+          stops: const [0.0, 0.5, 1.0],
         ).createShader(disc),
     );
   }
 
-  /// Радужный перелив + блик. Фаза радуги и угол блика зависят от хеша трека —
-  /// это и делает диски разными на вид.
+  /// Перелив + блик. Цвет перелива водим вокруг оттенка [accent] (а он в
+  /// динамическом режиме взят из обложки), поэтому диск попадает в палитру
+  /// текущего трека, а не светится случайной радугой. Угол блика зависит от
+  /// хеша трека — это разводит визуально даже треки с похожей обложкой.
   void _sheen(Canvas canvas, Offset center, double r, Rect disc) {
-    final hue0 = (hash % 360).toDouble();
-    // 12 стопов = два полных прохода спектра по кругу: у настоящего CD радуга
-    // повторяется, одного прохода на весь диск для этого мало.
-    const steps = 12;
+    final hsl = HSLColor.fromColor(accent);
+    // Насыщенность поднимаем: у приглушённого акцента перелив иначе выродился
+    // бы в серое пятно.
+    final sat = max(0.55, hsl.saturation);
+    // Два лепестка по кругу: оттенок ходит ±_hueSpan вокруг акцента, как у
+    // настоящего CD, где радуга повторяется дважды.
+    const steps = 24;
+    const hueSpan = 55.0;
     final ring = <Color>[
       for (var i = 0; i < steps; i++)
-        HSLColor.fromAHSL(1, (hue0 + 720 * i / steps) % 360, 0.9, 0.55)
-            .toColor()
-            .withValues(alpha: 0.18),
+        HSLColor.fromAHSL(
+          1,
+          (hsl.hue + hueSpan * sin(4 * pi * i / steps) + 360) % 360,
+          sat,
+          0.55 + 0.12 * cos(4 * pi * i / steps),
+        ).toColor().withValues(alpha: 0.34),
     ];
     canvas.drawCircle(
       center,
       r,
       Paint()
-        ..blendMode = BlendMode.plus
+        ..blendMode = BlendMode.overlay
         ..shader = SweepGradient(
           colors: [...ring, ring.first],
         ).createShader(disc),
@@ -205,10 +215,10 @@ class _CdPainter extends CustomPainter {
         ..shader = SweepGradient(
           colors: [
             Colors.transparent,
-            Colors.white.withValues(alpha: 0.13),
+            Colors.white.withValues(alpha: 0.22),
             Colors.transparent,
             Colors.transparent,
-            Colors.white.withValues(alpha: 0.07),
+            Colors.white.withValues(alpha: 0.12),
             Colors.transparent,
           ],
           stops: const [0.0, 0.06, 0.16, 0.48, 0.54, 0.64],
@@ -224,18 +234,18 @@ class _CdPainter extends CustomPainter {
     for (var i = 0; i < 8; i++) {
       final t = _printEdge + (0.99 - _printEdge) * i / 7;
       track
-        ..color = Colors.white.withValues(alpha: i.isEven ? 0.08 : 0.045)
+        ..color = Colors.white.withValues(alpha: i.isEven ? 0.30 : 0.16)
         ..strokeWidth = i.isEven ? 1.0 : 0.6;
       canvas.drawCircle(center, r * t, track);
     }
-    // Внутренняя кромка печати подсвечена акцентом — связывает диск с темой.
+    // Внутренняя кромка данных подсвечена акцентом — связывает диск с темой.
     canvas.drawCircle(
       center,
       r * _printEdge,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2
-        ..color = accent.withValues(alpha: 0.35),
+        ..color = accent.withValues(alpha: 0.45),
     );
     // Внешняя кромка.
     canvas.drawCircle(
@@ -244,32 +254,32 @@ class _CdPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
-        ..color = Colors.black.withValues(alpha: 0.5),
+        ..color = Colors.black.withValues(alpha: 0.35),
     );
   }
 
   /// Печать: артист по верхней дуге, название — по нижней (буквы «макушками»
   /// к центру, как на настоящей круговой печати — читается без поворота).
+  /// Буквы тёмные: на серебре белое не читалось бы.
   void _print(Canvas canvas, Offset center, double r, double d) {
-    final shadow = <Shadow>[
-      const Shadow(color: Colors.black, blurRadius: 4),
-      Shadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 9),
+    final halo = <Shadow>[
+      Shadow(color: Colors.white.withValues(alpha: 0.55), blurRadius: 3),
     ];
     final artistStyle = baseStyle.copyWith(
-      color: Colors.white,
+      color: const Color(0xFF14181C),
       fontSize: d * 0.052,
       fontWeight: FontWeight.w600,
       letterSpacing: 1.6,
       height: 1.0,
-      shadows: shadow,
+      shadows: halo,
     );
     final titleStyle = baseStyle.copyWith(
-      color: Colors.white.withValues(alpha: 0.92),
+      color: const Color(0xFF14181C).withValues(alpha: 0.88),
       fontSize: d * 0.046,
       fontWeight: FontWeight.w500,
       letterSpacing: 0.6,
       height: 1.0,
-      shadows: shadow,
+      shadows: halo,
     );
 
     _arcText(canvas, center, artist.toUpperCase(), artistStyle,
@@ -280,21 +290,11 @@ class _CdPainter extends CustomPainter {
 
   /// Прозрачное кольцо-хаб, зеркальный поясок и центральное отверстие — это то,
   /// по чему диск сразу читается как CD, а не как винил.
-  void _hub(Canvas canvas, Offset center, double r, Rect disc) {
-    // Зеркальный поясок между хабом и печатной зоной — светлое кольцо.
-    final mirror = Path()
-      ..addOval(Rect.fromCircle(center: center, radius: r * _printEdge))
-      ..addOval(Rect.fromCircle(center: center, radius: r * _hubOuter))
-      ..fillType = PathFillType.evenOdd;
-    canvas.drawPath(
-        mirror, Paint()..color = Colors.white.withValues(alpha: 0.13));
-
+  void _hub(Canvas canvas, Offset center, double r) {
     final hubRect = Rect.fromCircle(center: center, radius: r * _hubOuter);
-    // Зона зажима: прозрачный пластик — не чёрный провал, а мутноватое стекло.
+    // Зона зажима: прозрачный пластик — мутноватое стекло, светлее пластика.
     canvas.drawCircle(center, r * _hubOuter,
-        Paint()..color = Colors.black.withValues(alpha: 0.42));
-    canvas.drawCircle(center, r * _hubOuter,
-        Paint()..color = Colors.white.withValues(alpha: 0.10));
+        Paint()..color = Colors.white.withValues(alpha: 0.38));
     // Стеклянный блик на пластике.
     canvas.drawCircle(
       center,
@@ -304,9 +304,9 @@ class _CdPainter extends CustomPainter {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withValues(alpha: 0.22),
-            Colors.white.withValues(alpha: 0.02),
-            Colors.white.withValues(alpha: 0.16),
+            Colors.white.withValues(alpha: 0.45),
+            Colors.white.withValues(alpha: 0.05),
+            Colors.white.withValues(alpha: 0.30),
           ],
           stops: const [0.0, 0.55, 1.0],
         ).createShader(hubRect),
@@ -315,7 +315,7 @@ class _CdPainter extends CustomPainter {
     final edge = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2
-      ..color = Colors.white.withValues(alpha: 0.42);
+      ..color = Colors.black.withValues(alpha: 0.28);
     canvas.drawCircle(center, r * _hubOuter, edge);
     canvas.drawCircle(center, r * _hubInner, edge);
     canvas.drawCircle(
@@ -324,7 +324,7 @@ class _CdPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.8
-        ..color = Colors.white.withValues(alpha: 0.18),
+        ..color = Colors.black.withValues(alpha: 0.14),
     );
 
     // Отверстие.
@@ -335,7 +335,7 @@ class _CdPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = Colors.white38,
+        ..color = Colors.white.withValues(alpha: 0.55),
     );
   }
 
