@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_settings.dart';
 import '../../core/widgets/animated_bg.dart';
 import '../../core/widgets/artwork.dart';
+import '../../core/widgets/cd_disc.dart';
 import '../../core/widgets/player_visualizer.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
@@ -112,18 +113,29 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                         },
                         child: KeyedSubtree(
                           key: ValueKey(track.uid),
-                          child: ts.playerView == PlayerView.cover
-                              ? _coverArt(track, accent)
-                              : VinylDisc(
-                                  artworkUrl: track.artworkUrl,
-                                  isPlaying: pc.isPlaying && ts.spin,
-                                  accent: accent,
-                                  seed: track.uid,
-                                  size: 250,
-                                ),
+                          child: switch (ts.playerView) {
+                            PlayerView.cover => _coverArt(track, accent),
+                            PlayerView.cd => CdDisc(
+                                artworkUrl: track.artworkUrl,
+                                isPlaying: pc.isPlaying && ts.spin,
+                                accent: accent,
+                                artist: track.artist,
+                                title: track.title,
+                                seed: track.uid,
+                                size: 250,
+                              ),
+                            PlayerView.vinyl => VinylDisc(
+                                artworkUrl: track.artworkUrl,
+                                isPlaying: pc.isPlaying && ts.spin,
+                                accent: accent,
+                                seed: track.uid,
+                                size: 250,
+                              ),
+                          },
                         ),
                       ),
-                          if (ts.playerView != PlayerView.cover)
+                          // Тонарм — только у винила: у CD-плеера иглы нет.
+                          if (ts.playerView == PlayerView.vinyl)
                             Positioned.fill(
                               child: TonearmOverlay(
                                   playing: pc.isPlaying, accent: accent)),

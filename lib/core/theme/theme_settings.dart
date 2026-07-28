@@ -5,7 +5,9 @@ import 'app_colors.dart';
 
 enum AccentMode { dynamic, preset, custom }
 
-enum PlayerView { vinyl, cover }
+/// Вид пластинки в плеере. Новые варианты добавляем только в конец: индекс
+/// сохраняется в SharedPreferences (`ap_player`).
+enum PlayerView { vinyl, cover, cd }
 
 enum AnimLevel { max, moderate, min }
 
@@ -86,7 +88,9 @@ class ThemeSettingsController extends ChangeNotifier {
     accentMode = AccentMode.values[_prefs.getInt('ap_accentMode') ?? 0];
     presetIndex = _prefs.getInt('ap_preset') ?? 4;
     customColor = _prefs.getInt('ap_custom') ?? 0xFFB388FF;
-    playerView = PlayerView.values[_prefs.getInt('ap_player') ?? 0];
+    // clamp — на случай отката на версию, где вариантов было меньше.
+    playerView = PlayerView.values[
+        (_prefs.getInt('ap_player') ?? 0).clamp(0, PlayerView.values.length - 1)];
     animLevel = AnimLevel.values[_prefs.getInt('ap_anim') ?? 0];
     corners = CornerStyle.values[_prefs.getInt('ap_corners') ?? 2];
     systemFont = _prefs.getBool('ap_sysfont') ?? false;
