@@ -132,43 +132,56 @@ class _CdPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final disc = Rect.fromCircle(center: center, radius: r);
 
-    _metal(canvas, center, r, disc);
+    _mirror(canvas, center, r, disc);
     _sheen(canvas, center, r, disc);
     _tracks(canvas, center, r);
     _print(canvas, center, r, d);
     _hub(canvas, center, r);
+    _rim(canvas, center, r);
   }
 
-  /// Зеркальный пластик: холодное серебро, чуть темнее к краю, плюс мягкая
-  /// диагональная засветка — на неё дальше ложится радуга.
-  void _metal(Canvas canvas, Offset center, double r, Rect disc) {
+  /// Угол, на который повёрнута вся световая картина: блики и радуга должны
+  /// смотреть в одну сторону, иначе диск выглядит как набор случайных пятен.
+  double get _lightAngle => ((hash >> 17) % 360) * pi / 180;
+
+  /// Зеркало. Настоящий CD не «серебряный» — он тёмный и показывает отражение
+  /// комнаты: широкие светлые лепестки там, где ловится источник света, и почти
+  /// чёрное поле между ними. Ровная светлая заливка сразу читается как пластик.
+  void _mirror(Canvas canvas, Offset center, double r, Rect disc) {
     canvas.drawCircle(
       center,
       r,
       Paint()
         ..shader = const RadialGradient(
           colors: [
-            Color(0xFFF2F5F7),
-            Color(0xFFDCE2E7),
-            Color(0xFFAFB8C0),
-            Color(0xFF8C959D),
+            Color(0xFF474E57),
+            Color(0xFF343A42),
+            Color(0xFF23272D),
+            Color(0xFF14171B),
           ],
-          stops: [0.0, 0.45, 0.86, 1.0],
+          stops: [0.0, 0.5, 0.85, 1.0],
         ).createShader(disc),
     );
+
+    // Отражение источника света: два широких лепестка на противоположных
+    // сторонах (свет + его отражение через центр) — cos²-профиль даёт мягкий
+    // переход, каким он и бывает на зеркале.
+    const steps = 48;
+    final lobes = <Color>[
+      for (var i = 0; i <= steps; i++)
+        Colors.white.withValues(
+          alpha: 0.52 * pow(max(0.0, cos(2 * pi * i / steps)), 6).toDouble() +
+              0.16 * pow(max(0.0, -cos(2 * pi * i / steps)), 4).toDouble(),
+        ),
+    ];
     canvas.drawCircle(
       center,
       r,
       Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.55),
-            Colors.white.withValues(alpha: 0.0),
-            Colors.black.withValues(alpha: 0.12),
-          ],
-          stops: const [0.0, 0.5, 1.0],
+        ..blendMode = BlendMode.plus
+        ..shader = SweepGradient(
+          colors: lobes,
+          transform: GradientRotation(_lightAngle),
         ).createShader(disc),
     );
   }
@@ -195,89 +208,125 @@ class _CdPainter extends CustomPainter {
           0.55 + 0.12 * cos(4 * pi * i / steps),
         ).toColor().withValues(alpha: 0.34),
     ];
+    // Радуга видна не по всему кругу, а там, куда падает свет, и только в
+    // зоне данных. Поэтому рисуем её в отдельный слой и дважды вырезаем
+    // маской: по радиусу (гаснет у хаба и у самой кромки) и по углу (живёт в
+    // тех же лепестках, что и блик).
+    canvas.saveLayer(disc, Paint()..blendMode = BlendMode.plus);
     canvas.drawCircle(
       center,
       r,
       Paint()
-        ..blendMode = BlendMode.overlay
         ..shader = SweepGradient(
           colors: [...ring, ring.first],
+          transform: GradientRotation(_lightAngle),
         ).createShader(disc),
     );
-
-    // Узкий «отблеск» — два световых сектора на противоположных сторонах.
-    final specular = ((hash >> 17) % 360) * pi / 180;
     canvas.drawCircle(
       center,
       r,
       Paint()
-        ..blendMode = BlendMode.plus
-        ..shader = SweepGradient(
+        ..blendMode = BlendMode.dstIn
+        ..shader = const RadialGradient(
           colors: [
             Colors.transparent,
-            Colors.white.withValues(alpha: 0.22),
-            Colors.transparent,
-            Colors.transparent,
-            Colors.white.withValues(alpha: 0.12),
+            Colors.white,
+            Colors.white,
             Colors.transparent,
           ],
-          stops: const [0.0, 0.06, 0.16, 0.48, 0.54, 0.64],
-          transform: GradientRotation(specular),
+          stops: [0.34, 0.46, 0.93, 1.0],
         ).createShader(disc),
     );
+    const maskSteps = 48;
+    canvas.drawCircle(
+      center,
+      r,
+      Paint()
+        ..blendMode = BlendMode.dstIn
+        ..shader = SweepGradient(
+          colors: [
+            for (var i = 0; i <= maskSteps; i++)
+              Colors.white.withValues(
+                alpha: 0.18 +
+                    0.82 *
+                        pow(max(0.0, cos(2 * pi * i / maskSteps)), 2)
+                            .toDouble(),
+              ),
+          ],
+          transform: GradientRotation(_lightAngle),
+        ).createShader(disc),
+    );
+    canvas.restore();
   }
 
-  /// Концентрические дорожки данных и границы печатной зоны — по ним диск
-  /// читается как CD, а не как винил.
+  /// Дорожки данных. Их много и они тонкие: у настоящего CD это не пара
+  /// желобков, как у винила, а мелкая концентрическая рябь, которая и даёт
+  /// дифракцию. Восемь толстых колец, наоборот, читались как пластинка.
   void _tracks(Canvas canvas, Offset center, double r) {
-    final track = Paint()..style = PaintingStyle.stroke;
-    for (var i = 0; i < 8; i++) {
-      final t = _printEdge + (0.99 - _printEdge) * i / 7;
-      track
-        ..color = Colors.white.withValues(alpha: i.isEven ? 0.30 : 0.16)
-        ..strokeWidth = i.isEven ? 1.0 : 0.6;
+    final track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+    const lines = 96;
+    for (var i = 0; i < lines; i++) {
+      final t = _printEdge + (0.985 - _printEdge) * i / (lines - 1);
+      // Рябь чуть плотнее к внешнему краю — там дорожки длиннее и заметнее.
+      track.color = Colors.white
+          .withValues(alpha: (i.isEven ? 0.055 : 0.025) * (0.6 + 0.4 * t));
       canvas.drawCircle(center, r * t, track);
     }
-    // Внутренняя кромка данных подсвечена акцентом — связывает диск с темой.
+    // Кромка зоны данных подсвечена акцентом — связывает диск с темой.
     canvas.drawCircle(
       center,
       r * _printEdge,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = accent.withValues(alpha: 0.45),
+        ..strokeWidth = 1.0
+        ..color = accent.withValues(alpha: 0.35),
     );
-    // Внешняя кромка.
+  }
+
+  /// Кромка: тёмный срез поликарбоната и тонкий световой ободок по самому
+  /// краю — на нём диск «ловит» свет и перестаёт выглядеть плоской заливкой.
+  void _rim(Canvas canvas, Offset center, double r) {
     canvas.drawCircle(
       center,
-      r - 0.75,
+      r - 1.5,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..color = Colors.black.withValues(alpha: 0.35),
+        ..strokeWidth = 3
+        ..color = Colors.black.withValues(alpha: 0.55),
+    );
+    canvas.drawCircle(
+      center,
+      r - 3.5,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0
+        ..color = Colors.white.withValues(alpha: 0.30),
     );
   }
 
   /// Печать: артист по верхней дуге, название — по нижней (буквы «макушками»
   /// к центру, как на настоящей круговой печати — читается без поворота).
-  /// Буквы тёмные: на серебре белое не читалось бы.
+  /// Шелкография по зеркалу: светлая, тонкая, с широким трекингом — жирный
+  /// текст на CD выглядит наклейкой, а не печатью.
   void _print(Canvas canvas, Offset center, double r, double d) {
     final halo = <Shadow>[
-      Shadow(color: Colors.white.withValues(alpha: 0.55), blurRadius: 3),
+      Shadow(color: Colors.black.withValues(alpha: 0.65), blurRadius: 5),
     ];
     final artistStyle = baseStyle.copyWith(
-      color: const Color(0xFF14181C),
-      fontSize: d * 0.052,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 1.6,
+      color: Colors.white.withValues(alpha: 0.92),
+      fontSize: d * 0.044,
+      fontWeight: FontWeight.w500,
+      letterSpacing: 2.4,
       height: 1.0,
       shadows: halo,
     );
     final titleStyle = baseStyle.copyWith(
-      color: const Color(0xFF14181C).withValues(alpha: 0.88),
-      fontSize: d * 0.046,
-      fontWeight: FontWeight.w500,
-      letterSpacing: 0.6,
+      color: Colors.white.withValues(alpha: 0.72),
+      fontSize: d * 0.038,
+      fontWeight: FontWeight.w400,
+      letterSpacing: 1.2,
       height: 1.0,
       shadows: halo,
     );
@@ -292,10 +341,33 @@ class _CdPainter extends CustomPainter {
   /// по чему диск сразу читается как CD, а не как винил.
   void _hub(Canvas canvas, Offset center, double r) {
     final hubRect = Rect.fromCircle(center: center, radius: r * _hubOuter);
-    // Зона зажима: прозрачный пластик — мутноватое стекло, светлее пластика.
+
+    // Зеркальный поясок между зажимом и данными: у настоящего диска это
+    // сплошной металл без дорожек — самое светлое место на всём диске.
+    final mirror = Path()
+      ..addOval(Rect.fromCircle(center: center, radius: r * _printEdge))
+      ..addOval(hubRect)
+      ..fillType = PathFillType.evenOdd;
+    canvas.drawPath(
+      mirror,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.42),
+            Colors.white.withValues(alpha: 0.10),
+            Colors.white.withValues(alpha: 0.26),
+          ],
+          stops: const [0.0, 0.55, 1.0],
+        ).createShader(Rect.fromCircle(center: center, radius: r * _printEdge)),
+    );
+
+    // Зона зажима — прозрачный поликарбонат: он не светится сам, а показывает
+    // темноту под диском, поэтому затемняем, а не осветляем.
     canvas.drawCircle(center, r * _hubOuter,
-        Paint()..color = Colors.white.withValues(alpha: 0.38));
-    // Стеклянный блик на пластике.
+        Paint()..color = Colors.black.withValues(alpha: 0.45));
+    // Косой блик по стеклу.
     canvas.drawCircle(
       center,
       r * _hubOuter,
@@ -304,18 +376,19 @@ class _CdPainter extends CustomPainter {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withValues(alpha: 0.45),
-            Colors.white.withValues(alpha: 0.05),
-            Colors.white.withValues(alpha: 0.30),
+            Colors.white.withValues(alpha: 0.20),
+            Colors.white.withValues(alpha: 0.02),
+            Colors.white.withValues(alpha: 0.12),
           ],
           stops: const [0.0, 0.55, 1.0],
         ).createShader(hubRect),
     );
-    // Кольца, ограничивающие прозрачную зону, и кольцо-«ступенька» зажима.
+    // Кольца, ограничивающие прозрачную зону, и кольцо-«ступенька» зажима
+    // (stacking ring) — по нему диски лежат в стопке, не касаясь данных.
     final edge = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = Colors.black.withValues(alpha: 0.28);
+      ..strokeWidth = 1.0
+      ..color = Colors.white.withValues(alpha: 0.22);
     canvas.drawCircle(center, r * _hubOuter, edge);
     canvas.drawCircle(center, r * _hubInner, edge);
     canvas.drawCircle(
@@ -323,8 +396,8 @@ class _CdPainter extends CustomPainter {
       r * 0.265,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.8
-        ..color = Colors.black.withValues(alpha: 0.14),
+        ..strokeWidth = 1.6
+        ..color = Colors.white.withValues(alpha: 0.10),
     );
 
     // Отверстие.
