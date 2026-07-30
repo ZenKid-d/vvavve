@@ -15,6 +15,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/update_controller.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
+import '../../core/widgets/sync_status_text.dart';
 import '../../core/widgets/wordmark.dart';
 import '../../domain/models/source_type.dart';
 
@@ -430,12 +431,12 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
           ? CircleAvatar(backgroundImage: NetworkImage(user!.photoUrl!))
           : const Icon(Icons.account_circle_outlined),
       title: Text(user == null ? 'Войти через Google' : user.label),
-      subtitle: Text(
-        user == null
-            ? 'Синхронизация лайков, плейлистов и статистики между устройствами'
-            : _syncLabel(sync),
-        style: TextStyle(color: AppColors.white45, fontSize: 11),
-      ),
+      subtitle: user == null
+          ? Text(
+              'Синхронизация лайков, плейлистов и статистики между устройствами',
+              style: TextStyle(color: AppColors.white45, fontSize: 11),
+            )
+          : SyncStatusText(text: _syncLabel(sync), state: sync.state),
       trailing: _busy
           ? const SizedBox(
               width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))

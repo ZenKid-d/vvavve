@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
+import '../../core/theme/accent_provider.dart';
+import '../../core/widgets/karaoke_line.dart';
 import '../../data/lyrics_service.dart';
 import '../../domain/models/track.dart';
 
@@ -57,6 +59,22 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
     super.dispose();
   }
 
+  /// Насколько спета строка [i] к моменту [pos], 0..1.
+  ///
+  /// Длительность строки — расстояние до следующей: в LRC хранится только
+  /// момент начала. У последней строки нет следующей, поэтому берём типичные
+  /// четыре секунды: точнее взять неоткуда, а заливка не должна замереть.
+  double _progressAt(int i, Duration pos) {
+    if (i < 0 || i >= _lines.length) return 0;
+    final start = _lines[i].time;
+    final end = i + 1 < _lines.length
+        ? _lines[i + 1].time
+        : start + const Duration(seconds: 4);
+    final span = (end - start).inMilliseconds;
+    if (span <= 0) return 1;
+    return ((pos - start).inMilliseconds / span).clamp(0.0, 1.0);
+  }
+
   int _lineFor(Duration pos) {
     var idx = -1;
     for (var i = 0; i < _lines.length; i++) {
@@ -83,7 +101,10 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    // Акцент берём из провайдера, а не из темы: в динамическом режиме он
+    // вытянут из обложки играющего трека, и заливка текста попадает в его
+    // палитру. Тема же отражает выбранный режим оформления в целом.
+    final accent = ref.watch(effectiveAccentProvider);
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -239,18 +260,12 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                    style: TextStyle(
-                      fontSize: active ? 25 : 19,
-                      height: 1.28,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                      color: active
-                          ? Colors.white
-                          : Colors.white.withValues(alpha: dim),
-                    ),
-                    child: Text(_lines[i].text.isEmpty ? '♪' : _lines[i].text),
+                  KaraokeLine(
+                    text: _lines[i].text.isEmpty ? '♪' : _lines[i].text,
+                    accent: accent,
+                    active: active,
+                    progress: active ? _progressAt(i, pos) : 0,
+                    dim: dim,
                   ),
                   if (_translate &&
                       active &&
