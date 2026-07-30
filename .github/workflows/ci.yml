@@ -52,3 +52,13 @@ jobs:
       # именно этот класс уронил релиз v1.5.3).
       - name: Build debug APK
         run: flutter build apk --debug
+
+      # Веб-сборка: ловит нарушения платформенных фасадов (dart:io, просочившийся
+      # в общий код) — analyze их не видит, потому что анализирует под VM.
+      # Ассеты sqlite3-wasm нужны самой сборке не больше, чем рантайму, но
+      # кладём их тем же шагом, что и локально — чтобы web/ был воспроизводим.
+      - name: Setup sqlite3 wasm
+        run: dart run sqflite_common_ffi_web:setup
+
+      - name: Build web
+        run: flutter build web --release -t lib/main_web.dart --dart-define=APP_VERSION=ci

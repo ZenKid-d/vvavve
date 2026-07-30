@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -529,15 +530,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 _speedSheet(context, ref);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.equalizer),
-              title: const Text('Эквалайзер'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const EqualizerScreen()));
-              },
-            ),
+            // Эквалайзер — андроидный аудиоэффект (AndroidEqualizer поверх
+            // just_audio); в браузере такого API нет.
+            if (!kIsWeb)
+              ListTile(
+                leading: const Icon(Icons.equalizer),
+                title: const Text('Эквалайзер'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const EqualizerScreen()));
+                },
+              ),
             Consumer(builder: (context, ref, _) {
               final timer = ref.watch(sleepTimerProvider);
               final rem = timer.remaining;

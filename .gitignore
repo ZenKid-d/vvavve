@@ -68,3 +68,9 @@ roundds-*.apk.sha256
 # (flutter: generate: true в pubspec.yaml) — не коммитим производные файлы.
 lib/l10n/gen/
 
+# sqlite3 для веба: кладёт `dart run sqflite_common_ffi_web:setup` (см.
+# docs/WEB_AND_SYNC.md), в CI это отдельный шаг. Почти мегабайт бинарников,
+# привязанных к версии пакета, — в репозитории им делать нечего.
+web/sqlite3.wasm
+web/sqflite_sw.js
+

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -95,15 +96,18 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
         children: [
           _TotalCard(total: total),
           const SizedBox(height: 16),
-          _StorageTile(
-            icon: Icons.download_done,
-            title: 'Скачанные треки',
-            subtitle: '$count ${_plural(count)}',
-            value: _downloadsBytes,
-            actionLabel: 'Удалить всё',
-            onAction: (_busy || count == 0) ? null : _removeDownloads,
-          ),
-          const Divider(height: 24),
+          // Скачанных треков в браузере не бывает — строка была бы вечным нулём.
+          if (!kIsWeb) ...[
+            _StorageTile(
+              icon: Icons.download_done,
+              title: 'Скачанные треки',
+              subtitle: '$count ${_plural(count)}',
+              value: _downloadsBytes,
+              actionLabel: 'Удалить всё',
+              onAction: (_busy || count == 0) ? null : _removeDownloads,
+            ),
+            const Divider(height: 24),
+          ],
           _StorageTile(
             icon: Icons.image_outlined,
             title: 'Кэш (обложки и т.п.)',

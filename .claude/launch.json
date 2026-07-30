@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vvavve-web",
+      "runtimeExecutable": "C:\\src\\flutter\\bin\\flutter.bat",
+      "runtimeArgs": [
+        "run",
+        "-d",
+        "web-server",
+        "--web-port",
+        "5555",
+        "-t",
+        "lib/main_web.dart",
+        "--dart-define=APP_VERSION=3.2.2"
+      ],
+      "port": 5555
+    }
+  ]
+}

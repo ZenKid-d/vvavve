@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -38,8 +39,11 @@ class RoundsAudioHandler extends BaseAudioHandler {
   final AndroidEqualizer _equalizer = AndroidEqualizer();
   final AndroidLoudnessEnhancer _loudness = AndroidLoudnessEnhancer();
   late final AudioPlayer _player = AudioPlayer(
-    audioPipeline:
-        AudioPipeline(androidAudioEffects: [_loudness, _equalizer]),
+    // В браузере just_audio играет через <audio>, и аудиоэффектов там нет:
+    // передать конвейер — значит упасть на старте, поэтому его просто нет.
+    audioPipeline: kIsWeb
+        ? null
+        : AudioPipeline(androidAudioEffects: [_loudness, _equalizer]),
   );
 
   AndroidEqualizer get equalizer => _equalizer;
@@ -91,6 +95,9 @@ class RoundsAudioHandler extends BaseAudioHandler {
 
   bool get gapless => _gapless;
   Future<void> setGapless(bool on) async {
+    // На вебе ConcatenatingAudioSource эмулируется поверх <audio>, настоящей
+    // бесшовности не даёт — не включаем, чтобы не обещать несуществующего.
+    if (kIsWeb) on = false;
     if (_gapless == on) return;
     _gapless = on;
     _notify();
