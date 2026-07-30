@@ -6,6 +6,9 @@ import 'package:sqflite_common/sqlite_api.dart';
 
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
+import '../../sync/dislike_store.dart';
+import '../../sync/sync_clock.dart';
+import '../../sync/synced_record.dart';
 import 'recs_db.dart';
 import 'recs_dedup.dart';
 import 'recs_signals.dart';
@@ -15,7 +18,7 @@ import 'wave_constraints.dart';
 /// Recs v2 — высокоуровневый стор поверх [RecsDb]: логирование событий,
 /// дизлайки (hard-фильтр), cooldown, одноразовый импорт из библиотеки.
 /// Дизлайки держим и в памяти — чтобы UI спрашивал синхронно и реактивно.
-class RecsStore extends ChangeNotifier {
+class RecsStore extends ChangeNotifier implements DislikeStore {
   RecsStore(this._db);
   final RecsDb _db;
   Database get _sql => _db.db;
@@ -38,7 +41,10 @@ class RecsStore extends ChangeNotifier {
   /// Загружает дизлайки и cooldown-зеркало в память (вызывается один раз при старте).
   Future<void> init() async {
     try {
-      final rows = await _sql.query('dislikes', orderBy: 'ts DESC');
+      // deleted = 0: снятые дизлайки остаются в таблице надгробиями, чтобы
+      // синхронизация могла донести удаление до других устройств.
+      final rows = await _sql
+          .query('dislikes', where: 'deleted = 0', orderBy: 'ts DESC');
       _dislikedKeys.clear();
       _disliked.clear();
       for (final r in rows) {
@@ -163,6 +169,8 @@ class RecsStore extends ChangeNotifier {
             'source': t.source.id,
             'track_json': jsonEncode(t.toJson()),
             'ts': _nowSec,
+            'deleted': 0,
+            'updated_ms': SyncClock.now(),
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
@@ -181,8 +189,92 @@ class RecsStore extends ChangeNotifier {
     _disliked.removeWhere((e) => keyFor(e) == key);
     notifyListeners();
     try {
-      await _sql.delete('dislikes', where: 'track_key = ?', whereArgs: [key]);
+      // Мягкое удаление: строку оставляем надгробием, иначе другое устройство
+      // не отличит снятый дизлайк от никогда не поставленного и вернёт его.
+      await _sql.update(
+        'dislikes',
+        {'deleted': 1, 'updated_ms': SyncClock.now()},
+        where: 'track_key = ?',
+        whereArgs: [key],
+      );
     } catch (_) {}
+  }
+
+  // --- Синхронизация дизлайков ---
+
+  /// Записи, изменённые после [watermark] — для отправки в облако.
+  @override
+  Future<List<SyncedRecord<Map<String, dynamic>>>> dirtyDislikes(
+      int watermark) async {
+    try {
+      final rows = await _sql.query('dislikes',
+          where: 'updated_ms > ?', whereArgs: [watermark]);
+      return [
+        for (final r in rows)
+          SyncedRecord<Map<String, dynamic>>(
+            key: r['track_key'] as String,
+            updatedAt: (r['updated_ms'] as num?)?.toInt() ?? 0,
+            deleted: (r['deleted'] as num?)?.toInt() == 1,
+            value: r['deleted'] == 1
+                ? null
+                : {
+                    'track': jsonDecode(r['track_json'] as String? ?? '{}'),
+                  },
+          ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Применяет дизлайк, приехавший с другого устройства (последняя правка
+  /// выигрывает). Возвращает true, если состояние изменилось.
+  @override
+  Future<bool> mergeRemoteDislike(
+      SyncedRecord<Map<String, dynamic>> incoming) async {
+    SyncClock.seen(incoming.updatedAt);
+    try {
+      final rows = await _sql.query('dislikes',
+          where: 'track_key = ?', whereArgs: [incoming.key], limit: 1);
+      final localAt = rows.isEmpty
+          ? -1
+          : ((rows.first['updated_ms'] as num?)?.toInt() ?? 0);
+      if (localAt >= incoming.updatedAt) return false;
+
+      if (incoming.deleted) {
+        await _sql.update(
+          'dislikes',
+          {'deleted': 1, 'updated_ms': incoming.updatedAt},
+          where: 'track_key = ?',
+          whereArgs: [incoming.key],
+        );
+        _dislikedKeys.remove(incoming.key);
+        _disliked.removeWhere((e) => keyFor(e) == incoming.key);
+      } else {
+        final trackJson = incoming.value?['track'];
+        if (trackJson is! Map) return false;
+        final t = Track.fromJson(trackJson.cast<String, dynamic>());
+        await _sql.insert(
+          'dislikes',
+          {
+            'track_key': incoming.key,
+            'artist': t.artist,
+            'title': t.title,
+            'source': t.source.id,
+            'track_json': jsonEncode(t.toJson()),
+            'ts': _nowSec,
+            'deleted': 0,
+            'updated_ms': incoming.updatedAt,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        if (_dislikedKeys.add(incoming.key)) _disliked.insert(0, t);
+      }
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Одноразовый импорт существующих сигналов из библиотеки в event log:

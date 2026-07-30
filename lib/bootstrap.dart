@@ -10,6 +10,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/auth/auth_service.dart';
+import 'core/net/bff.dart';
+import 'data/sources/proxied_source.dart';
+import 'domain/music_source.dart';
 import 'firebase_options.dart';
 import 'core/diagnostics.dart';
 import 'core/downloads_controller.dart';
@@ -52,6 +56,10 @@ class PlatformCaps {
   /// Конфиг фоновой службы: на Android — канал уведомления, в браузере
   /// остаётся только MediaSession, и настройки канала игнорируются.
   final AudioServiceConfig audioConfig;
+
+  /// Ходить ли к источникам через собственный прокси. В браузере иначе никак:
+  /// CORS и запрет на заголовки закрывают прямой путь полностью.
+  bool get useProxy => !networkBypass && hasBff;
 }
 
 /// Общий старт приложения: читает настройки, поднимает источники, аудио-хендлер
@@ -89,7 +97,21 @@ Future<void> bootstrapApp(PlatformCaps caps) async {
 
   // Общие экземпляры — их же отдаём в Riverpod через overrides,
   // чтобы UI и аудио-хендлер работали с одними источниками.
-  final dio = buildAppDio(doh: doh, proxy: proxy);
+  // Токен для прокси: он проверяет подпись, поэтому без входа веб-версия
+  // работать не может — там это единственный путь к источникам.
+  Future<String?> idToken() async {
+    try {
+      return await AuthService().idToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final dio = buildAppDio(
+    doh: doh,
+    proxy: proxy,
+    bffIdToken: caps.useProxy ? idToken : null,
+  );
   // Чистим оставшиеся после обновления APK из кэша.
   if (caps.apkUpdates) unawaited(UpdateService(dio).cleanupApks());
   final youtube =
@@ -100,11 +122,16 @@ Future<void> bootstrapApp(PlatformCaps caps) async {
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
   final yandex = YandexSource(dio);
   final vk = VkSource(dio);
+  // В браузере ссылку на поток подменяет прокси: тег <audio> не умеет слать
+  // заголовки, без которых источники поток не отдают.
+  MusicSource wrap(MusicSource source) =>
+      caps.useProxy ? ProxiedSource(source, dio, idToken) : source;
+
   final aggregator = Aggregator({
-    SourceType.youtube: youtube,
-    SourceType.soundcloud: soundcloud,
-    SourceType.yandex: yandex,
-    SourceType.vk: vk,
+    SourceType.youtube: wrap(youtube),
+    SourceType.soundcloud: wrap(soundcloud),
+    SourceType.yandex: wrap(yandex),
+    SourceType.vk: wrap(vk),
   });
 
   final downloads = DownloadsController(prefs, dio, aggregator);

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/diagnostics.dart';
 import '../core/library_controller.dart';
+import 'dislike_store.dart';
 import 'session_host.dart';
 import 'session_snapshot.dart';
 import 'sync_clock.dart';
@@ -32,7 +33,9 @@ class SyncService extends ChangeNotifier {
     String deviceId = '',
     String? deviceLabel,
     Duration sessionThrottle = const Duration(seconds: 30),
-  })  : _prefs = prefs,
+    DislikeStore? dislikes,
+  })  : _dislikes = dislikes,
+        _prefs = prefs,
         _library = library,
         _transportFactory = transportFactory,
         _pushDelay = pushDelay,
@@ -47,6 +50,13 @@ class SyncService extends ChangeNotifier {
   final SessionHost? _session;
   final String _deviceId;
   final String? _deviceLabel;
+
+  /// Дизлайки живут не в prefs, а в SQLite рекомендаций — отдельным набором.
+  final DislikeStore? _dislikes;
+
+  /// Имя коллекции дизлайков. Ключ записи — нормализованное «артист|название»,
+  /// а не uid: один и тот же трек из разных источников дизлайкается целиком.
+  static const _dislikesCollection = 'trackDislikes';
 
   /// Как часто отправлять позицию во время игры. Смена трека и пауза уезжают
   /// сразу — их пользователь и ждёт на другом устройстве.
@@ -147,6 +157,49 @@ class SyncService extends ChangeNotifier {
             onError: _onError,
           ));
     }
+    if (_dislikes != null) {
+      final since = _prefs.getInt(_cursorKey(_dislikesCollection)) ?? 0;
+      _subs.add(transport.watch(_dislikesCollection, since: since).listen(
+            _applyRemoteDislikes,
+            onError: _onError,
+          ));
+    }
+  }
+
+  Future<void> _applyRemoteDislikes(List<RemoteDoc> docs) async {
+    final store = _dislikes;
+    if (store == null || docs.isEmpty) return;
+    var cursor = _prefs.getInt(_cursorKey(_dislikesCollection)) ?? 0;
+    for (final doc in docs) {
+      // Своё же не применяем повторно — база и так в нужном состоянии.
+      if (doc.record.origin != _deviceId) {
+        await store.mergeRemoteDislike(doc.record);
+      }
+      if (doc.serverAt > cursor) cursor = doc.serverAt;
+    }
+    await _prefs.setInt(_cursorKey(_dislikesCollection), cursor);
+    _lastSyncAt = DateTime.now();
+    _setState(SyncState.idle);
+  }
+
+  Future<void> _pushDislikes(SyncTransport transport) async {
+    final store = _dislikes;
+    if (store == null) return;
+    final watermark = _prefs.getInt(_pushedKey(_dislikesCollection)) ?? 0;
+    final dirty = await store.dirtyDislikes(watermark);
+    if (dirty.isEmpty) return;
+    await transport.push(_dislikesCollection, [
+      for (final r in dirty)
+        SyncedRecord<Map<String, dynamic>>(
+          key: r.key,
+          updatedAt: r.updatedAt,
+          deleted: r.deleted,
+          origin: _deviceId,
+          value: r.value,
+        ),
+    ]);
+    final maxAt = dirty.map((r) => r.updatedAt).reduce((a, b) => a > b ? a : b);
+    await _prefs.setInt(_pushedKey(_dislikesCollection), maxAt);
   }
 
   Future<void> _applyRemote(String collection, List<RemoteDoc> docs) async {
@@ -288,6 +341,7 @@ class SyncService extends ChangeNotifier {
         final maxAt = dirty.map((r) => r.updatedAt).reduce((a, b) => a > b ? a : b);
         await _prefs.setInt(_pushedKey(entry.key), maxAt);
       }
+      await _pushDislikes(transport);
       _lastSyncAt = DateTime.now();
       _error = null;
       _setState(SyncState.idle);

@@ -62,3 +62,28 @@ jobs:
 
       - name: Build web
         run: flutter build web --release -t lib/main_web.dart --dart-define=APP_VERSION=ci
+
+  # Прокси веб-версии — отдельный пакет со своим pubspec; без него в браузере
+  # нет ни поиска, ни звука, поэтому он проверяется вместе с приложением.
+  bff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.6'
+
+      - name: Pub get
+        working-directory: server
+        run: dart pub get
+
+      - name: Analyze
+        working-directory: server
+        run: dart analyze
+
+      - name: Test
+        working-directory: server
+        run: dart test

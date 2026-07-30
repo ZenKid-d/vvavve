@@ -1,7 +1,10 @@
 name: roundds
 description: "Roundds — единый плеер музыки из разных источников (YouTube Music, SoundCloud, Яндекс Музыка, VK Музыка)."
 publish_to: "none"
-version: 3.0.2+52
+# Совпадает с последним выпущенным релизом. APK собирается с версией, которую
+# задаёт release.yml (--build-name/--build-number), но веб-сборка и экран
+# «о приложении» берут её отсюда — расхождение вводило бы в заблуждение.
+version: 3.2.2+30202
 
 environment:
   sdk: ">=3.6.0 <4.0.0"

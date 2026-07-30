@@ -9,7 +9,7 @@ class RecsDb {
   RecsDb._(this.db);
   final Database db;
 
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
 
   static Future<RecsDb> open() async {
     try {
@@ -54,7 +54,9 @@ class RecsDb {
         title TEXT,
         source TEXT,
         track_json TEXT,
-        ts INTEGER NOT NULL
+        ts INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        updated_ms INTEGER NOT NULL DEFAULT 0
       )''');
 
     await db.execute('''
@@ -97,6 +99,20 @@ class RecsDb {
   // Будущие версии схемы: switch по [from].
   static Future<void> _upgrade(Database db, int from, int to) async {
     if (from < 2) await _createMaintenance(db);
+    if (from < 3) {
+      // Дизлайки начинают синхронизироваться между устройствами, а для этого
+      // удаление должно быть отличимо от «никогда не было»: снятый дизлайк
+      // теперь помечается, а не стирается.
+      //
+      // Существующий ts — в секундах, поэтому метка синхронизации заводится
+      // отдельным столбцом в миллисекундах: смешивать их молча — верный способ
+      // получить сравнение секунд с миллисекундами.
+      await db.execute(
+          'ALTER TABLE dislikes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+      await db.execute(
+          'ALTER TABLE dislikes ADD COLUMN updated_ms INTEGER NOT NULL DEFAULT 0');
+      await db.execute('UPDATE dislikes SET updated_ms = ts * 1000');
+    }
   }
 
   /// Удаляет события старше [retention] (по умолчанию 90 дней) — event log

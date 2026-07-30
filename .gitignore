@@ -74,3 +74,7 @@ lib/l10n/gen/
 web/sqlite3.wasm
 web/sqflite_sw.js
 
+
+# Прокси-сервер: свой пакет со своими зависимостями
+server/.dart_tool/
+server/pubspec.lock

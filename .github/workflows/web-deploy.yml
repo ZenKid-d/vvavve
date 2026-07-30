@@ -1,0 +1,80 @@
+name: Web
+
+# Публикует веб-версию на GitHub Pages. Прокси (BFF) живёт отдельно на своём
+# сервере — здесь только статика.
+#
+# Перед первым запуском: Settings → Pages → Source = GitHub Actions,
+# и переменная BFF_URL (Settings → Secrets and variables → Actions → Variables)
+# с адресом прокси. Без неё сборка соберётся, но поиск и звук работать не будут.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'android/**'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # Та же версия, что в ci.yml и release.yml.
+          flutter-version: '3.44.4'
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      # sqlite3 в wasm для recs.db: файлы не хранятся в репозитории (почти
+      # мегабайт бинарников, привязанных к версии пакета).
+      - name: Setup sqlite3 wasm
+        run: dart run sqflite_common_ffi_web:setup
+
+      - name: Build
+        env:
+          BFF_URL: ${{ vars.BFF_URL }}
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)
+          flutter build web --release \
+            -t lib/main_web.dart \
+            --base-href "/${GITHUB_REPOSITORY#*/}/" \
+            --dart-define=APP_VERSION="$VERSION" \
+            --dart-define=BFF_URL="$BFF_URL"
+
+      # go_router держит маршруты в URL, а Pages о них не знает: без этой копии
+      # прямой заход на /library вернёт 404 вместо приложения.
+      - name: SPA fallback
+        run: cp build/web/index.html build/web/404.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

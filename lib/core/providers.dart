@@ -22,6 +22,7 @@ import '../sync/firestore_transport.dart';
 import '../sync/sync_service.dart';
 import 'auth/auth_service.dart';
 import 'diagnostics.dart';
+import 'net/bff_interceptor.dart';
 import 'net/doh_http.dart';
 import 'net/doh_resolver.dart';
 import '../data/google_yt_import.dart';
@@ -85,7 +86,11 @@ bool _isTransient(DioException e) {
 /// DNS-over-HTTPS + коннект по IP), [proxy] (`host:port`) — HTTP-прокси, который
 /// сам резолвит и коннектит (обходит и DNS-, и SNI-блок; приоритетнее DoH).
 /// Оба null/пусто — обычный системный DNS.
-Dio buildAppDio({DohResolver? doh, String? proxy}) {
+Dio buildAppDio({
+  DohResolver? doh,
+  String? proxy,
+  Future<String?> Function()? bffIdToken,
+}) {
   final dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 20),
@@ -99,6 +104,13 @@ Dio buildAppDio({DohResolver? doh, String? proxy}) {
     // что dio выбрал сам.
     final adapter = buildDohDioAdapter(doh, proxy: proxy);
     if (adapter != null) dio.httpClientAdapter = adapter;
+  }
+
+  // Веб: все запросы к источникам переписываются на собственный прокси. Ставим
+  // до перехватчика повторов, чтобы повтор уходил уже по переписанному адресу.
+  // На Android этот перехватчик не устанавливается вовсе.
+  if (bffIdToken != null) {
+    dio.interceptors.add(BffInterceptor(bffIdToken));
   }
 
   // Автоповтор транзиентных обрывов. Только идемпотентные GET; статусные ошибки
@@ -280,6 +292,7 @@ final syncServiceProvider = ChangeNotifierProvider<SyncService>((ref) {
     library: ref.read(libraryProvider),
     transportFactory: (uid) => FirestoreTransport(uid),
     session: HandlerSessionHost(ref.read(audioHandlerProvider)),
+    dislikes: ref.read(recsStoreProvider),
     deviceId: DeviceId.ensure(prefs),
     deviceLabel: kIsWeb ? 'браузер' : 'телефон',
   );
