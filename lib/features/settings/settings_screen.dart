@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_service.dart' show AuthFailure;
 import '../../core/io/file_io.dart';
+import '../../sync/sync_service.dart' show SyncService, SyncState;
 import '../../core/providers.dart';
 import '../../core/routing/app_router.dart' show Routes;
 import '../../core/theme/app_colors.dart';
@@ -397,10 +398,31 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  /// Честный статус вместо вечного «синхронизация включена»: если облако
+  /// недоступно (а в России это регулярно), пользователь должен видеть это, а
+  /// не гадать, почему лайки не доехали.
+  String _syncLabel(SyncService sync) {
+    switch (sync.state) {
+      case SyncState.syncing:
+        return 'Синхронизация…';
+      case SyncState.error:
+        return 'Облако недоступно — данные сохраняются на устройстве';
+      case SyncState.idle:
+        final at = sync.lastSyncAt;
+        if (at == null) return 'Синхронизировано';
+        final t = TimeOfDay.fromDateTime(at);
+        final mm = t.minute.toString().padLeft(2, '0');
+        return 'Синхронизировано в ${t.hour}:$mm';
+      case SyncState.off:
+        return 'Синхронизация не запущена';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ref.read(authServiceProvider);
     final user = ref.watch(authStateProvider).value;
+    final sync = ref.watch(syncServiceProvider);
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -410,8 +432,8 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
       title: Text(user == null ? 'Войти через Google' : user.label),
       subtitle: Text(
         user == null
-            ? 'Синхронизация лайков, плейлистов и очереди между устройствами'
-            : 'Синхронизация включена',
+            ? 'Синхронизация лайков, плейлистов и статистики между устройствами'
+            : _syncLabel(sync),
         style: TextStyle(color: AppColors.white45, fontSize: 11),
       ),
       trailing: _busy

@@ -15,6 +15,9 @@ class RoundedsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = ref.watch(effectiveAccentProvider);
     final ts = ref.watch(themeSettingsProvider);
+    // Держим связку «вход ↔ синхронизация» живой всё время работы приложения:
+    // иначе провайдер ленивый и обмен просто не запустится.
+    ref.watch(syncBinderProvider);
 
     return MaterialApp.router(
       title: 'vvavve',

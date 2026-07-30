@@ -9,6 +9,7 @@ import '../domain/models/playlist.dart';
 import '../domain/models/track.dart';
 import '../sync/artist_flags.dart';
 import '../sync/device_id.dart';
+import '../sync/raw_sync_bucket.dart';
 import '../sync/sync_clock.dart';
 import '../sync/synced_set.dart';
 import '../sync/track_stat.dart';
@@ -66,6 +67,9 @@ class LibraryController extends ChangeNotifier {
     encode: (s) => s.toJson(),
     decode: TrackStat.fromJson,
     deviceId: _deviceId,
+    // Счётчики не подчиняются «последняя правка выигрывает»: правка с другого
+    // устройства не отменяет мою, а дополняет.
+    combine: (local, incoming) => local.mergeWith(incoming),
   );
 
   SyncedSet<AlbumResult> _albumSet() => SyncedSet<AlbumResult>(
@@ -351,6 +355,38 @@ class LibraryController extends ChangeNotifier {
 
   Future<void> _persist<T>(String key, SyncedSet<T> set) =>
       _prefs.setString(key, set.encode());
+
+  // --- Точки подключения синхронизации ---
+
+  /// Наборы, которые ездят между устройствами: имя коллекции → набор.
+  /// Ключ prefs у некоторых исторически другой, поэтому связь явная.
+  static const _bucketPrefsKeys = {
+    'likes': 'liked',
+    'albumLikes': 'liked_albums',
+    'albumDislikes': 'disliked_albums',
+    'playlists': 'playlists',
+    'artists': 'artists',
+    'stats': 'stats',
+  };
+
+  Map<String, RawSyncBucket> get syncBuckets => {
+        'likes': _liked,
+        'albumLikes': _likedAlbums,
+        'albumDislikes': _dislikedAlbums,
+        'playlists': _playlists,
+        'artists': _artists,
+        'stats': _stats,
+      };
+
+  /// Сохраняет набор после слияния с приехавшим извне и обновляет интерфейс.
+  Future<void> persistBucket(String name) async {
+    final prefsKey = _bucketPrefsKeys[name];
+    final bucket = syncBuckets[name];
+    if (prefsKey == null || bucket == null) return;
+    await _prefs.setString(prefsKey, bucket.encode());
+    if (name == 'stats') _invalidateStatCaches();
+    notifyListeners();
+  }
 
   Future<void> _persistListened() =>
       _prefs.setString('listened_ms_v2', jsonEncode(_listenedByDevice));

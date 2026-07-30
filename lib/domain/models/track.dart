@@ -51,6 +51,25 @@ class Track {
         'extra': extra,
       };
 
+  /// Поля [extra], которые имеет смысл переносить между устройствами: мелкие
+  /// идентификаторы, по которым источник потом сам добирает остальное.
+  static const _portableExtra = {'albumId', 'albumTitle', 'ownerId', 'permalink'};
+
+  /// То же, что [toJson], но без непереносимого содержимого [extra].
+  ///
+  /// В [extra] источники кладут своё рабочее состояние — например, SoundCloud
+  /// список transcodings с подписанными ссылками. Такие ссылки протухают через
+  /// считанные часы, весят килобайты и на другом устройстве бесполезны: везти
+  /// их в облако и вредно, и дорого. Источник обязан уметь добрать это сам
+  /// (см. SoundcloudSource.resolveStream).
+  Map<String, dynamic> toSyncJson() => {
+        ...toJson(),
+        'extra': {
+          for (final e in extra.entries)
+            if (_portableExtra.contains(e.key)) e.key: e.value,
+        },
+      };
+
   factory Track.fromJson(Map<String, dynamic> j) {
     // Обязательное поле — без id трек не имеет uid и бесполезен для очереди/
     // истории/плейлиста. Раньше `j['id'] as String` бросал непонятный TypeError

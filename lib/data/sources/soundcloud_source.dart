@@ -259,11 +259,38 @@ class SoundcloudSource implements MusicSource {
     }
   }
 
+  /// Догружает transcodings трека по его id.
+  ///
+  /// Нужен, когда в [Track.extra] их нет: у трека с другого устройства, из
+  /// бэкапа или из сохранённой сессии. Пустой ответ здесь — уже настоящий
+  /// признак недоступности.
+  Future<List<Map>> _fetchTranscodings(String id) async {
+    try {
+      final r = await _dio.get('$_apiBase/tracks/$id',
+          queryParameters: {'client_id': _clientId},
+          options: Options(headers: _authHeaders));
+      final media = (r.data as Map)['media'];
+      final list = (media is Map ? media['transcodings'] : null) as List?;
+      return list?.cast<Map>() ?? const [];
+    } catch (e) {
+      Diagnostics.instance
+          .warn('sc.resolve', '$id: не удалось добрать transcodings: $e');
+      return const [];
+    }
+  }
+
   @override
   Future<PlayableStream> resolveStream(Track track) async {
     await _ensureClientId();
-    final transcodings =
+    var transcodings =
         (track.extra['transcodings'] as List?)?.cast<Map>() ?? const [];
+    if (transcodings.isEmpty) {
+      // Пусто — ещё не повод объявлять пейволл. Транскодинги живут в extra и
+      // не переносятся: они протухают, поэтому их нет у трека, приехавшего с
+      // другого устройства, восстановленного из бэкапа или поднятого из старой
+      // сессии. Сначала добираем их по id и только потом делаем выводы.
+      transcodings = await _fetchTranscodings(track.id);
+    }
     if (transcodings.isEmpty) {
       // Нет транскодингов вовсе — трек закрыт для off-platform стриминга
       // (paywalled Go+, geo-block, снят с публикации). Это не сетевой сбой, а

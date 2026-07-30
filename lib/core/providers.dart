@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // riverpod 3 вынес ChangeNotifierProvider/StateProvider в legacy-модуль
@@ -13,6 +15,8 @@ import '../data/sources/vk_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import '../sync/firestore_transport.dart';
+import '../sync/sync_service.dart';
 import 'auth/auth_service.dart';
 import 'diagnostics.dart';
 import 'net/doh_http.dart';
@@ -263,6 +267,33 @@ final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 /// значение null означает «не вошёл», и это полностью рабочий режим.
 final authStateProvider = StreamProvider<AppUser?>(
     (ref) => ref.watch(authServiceProvider).authState);
+
+/// Обмен библиотекой с облаком. Сам по себе бездействует — включается и
+/// выключается вслед за входом (см. [syncBinderProvider]).
+final syncServiceProvider = ChangeNotifierProvider<SyncService>((ref) {
+  final service = SyncService(
+    prefs: ref.read(prefsProvider),
+    library: ref.read(libraryProvider),
+    transportFactory: (uid) => FirestoreTransport(uid),
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Связывает вход и синхронизацию: пользователь появился — обмен включается,
+/// вышел — выключается. Отдельным провайдером, чтобы служба не знала про
+/// авторизацию, а авторизация — про синхронизацию.
+final syncBinderProvider = Provider<void>((ref) {
+  final sync = ref.watch(syncServiceProvider);
+  ref.listen<AsyncValue<AppUser?>>(authStateProvider, (_, next) {
+    final user = next.value;
+    if (user == null) {
+      unawaited(sync.stop());
+    } else {
+      unawaited(sync.start(user.uid));
+    }
+  }, fireImmediately: true);
+});
 
 /// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
 final downloadsProvider = ChangeNotifierProvider<DownloadsController>(

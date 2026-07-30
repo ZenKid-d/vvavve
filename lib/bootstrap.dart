@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,6 +64,13 @@ Future<void> bootstrapApp(PlatformCaps caps) async {
   try {
     await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform);
+    // Локальный кэш Firestore — он же очередь отправки: правки, сделанные без
+    // сети, доедут сами при восстановлении связи, поэтому своей очереди не
+    // требуется. И интерфейс никогда не ждёт сеть.
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: 40 * 1024 * 1024,
+    );
   } catch (e) {
     Diagnostics.instance.warn('firebase', 'Инициализация не удалась: $e');
   }
