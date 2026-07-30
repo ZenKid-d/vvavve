@@ -12,7 +12,28 @@
           "package_name": "com.roundds.roundds"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "543928355878-61ot4b7qt7gkqeusulsq1h375fk97kde.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.roundds.roundds",
+            "certificate_hash": "85d9808ff734b634b076f5fc3fc60a0d68335972"
+          }
+        },
+        {
+          "client_id": "543928355878-jfgeesrfmdf11ohfg672dp2ulbgmamei.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.roundds.roundds",
+            "certificate_hash": "45f42cf95637d16b06daccc67daded0d1e799ec0"
+          }
+        },
+        {
+          "client_id": "543928355878-0clg986s2ia629dprbrr4hrr3db11kdj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAgk1K21ivPqpQhxQVZXsjtXtxkqbZz5sQ"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "543928355878-0clg986s2ia629dprbrr4hrr3db11kdj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
