@@ -1,45 +1,73 @@
 # Настройка входа Google для импорта лайков YouTube Music
 
 Импорт лайкнутых треков использует **официальный YouTube Data API v3** и вход
-через Google (OAuth). Чтобы вход заработал, нужно один раз создать OAuth-клиент
-в Google Cloud — приложение подхватит его по package name + SHA-1.
+через Google (OAuth).
 
-## Шаги (≈10 минут)
+> **Что изменилось.** Раньше OAuth-клиент заводился в отдельном проекте Google
+> Cloud. Теперь приложение входит через Firebase (проект `count0-8424b`), и
+> клиенты живут там же: пара «package + SHA-1» уникальна глобально, поэтому
+> держать её в двух проектах невозможно — старый клиент удалён. `GoogleSignIn`
+> в приложении один на всё, а скоуп `youtube.readonly` запрашивается отдельно,
+> прямо перед импортом.
 
-1. Открой **Google Cloud Console** → https://console.cloud.google.com/ →
-   создай проект (или выбери существующий).
-2. **APIs & Services → Library** → найди **YouTube Data API v3** → **Enable**.
+## Что уже сделано
+
+- Проект Firebase `count0-8424b`, приложения Android и Web.
+- Провайдер **Google** включён в Authentication.
+- OAuth-клиенты Android созданы под **оба** ключа подписи — отладочный и
+  релизный (иначе вход работает в отладке и молча падает в опубликованном APK).
+- `android/app/google-services.json` и `lib/firebase_options.dart` лежат в
+  репозитории: там публичные идентификаторы, а граница безопасности — правила
+  Firestore.
+
+## Что нужно для импорта (один раз)
+
+Вход сам по себе уже работает. Для доступа к YouTube Data API в том же проекте:
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → вверху выбрать
+   проект **count0-8424b** (проекты Firebase — это проекты Cloud).
+2. **APIs & Services → Library** → **YouTube Data API v3** → **Enable**.
+   Без этого вход пройдёт, а запрос лайков вернёт 403.
 3. **APIs & Services → OAuth consent screen**:
-   - User type: **External** → Create.
-   - Заполни название приложения и свою почту.
-   - На шаге **Test users** добавь **свой** Google-аккаунт (пока проект в
-     статусе Testing, входить может только он).
-   - Scopes можно не добавлять — приложение запросит `youtube.readonly` само.
-4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
-   - Application type: **Android**
-   - Package name: `com.roundds.roundds`
-   - SHA-1: `6B:FB:0F:90:79:77:6F:AD:A9:A3:C9:26:DB:E2:B0:27:28:7E:04:2E`
-   - Create.
+   - User type: **External**.
+   - Название приложения и почта поддержки.
+   - **Test users**: добавить свой Google-аккаунт. Пока приложение в статусе
+     Testing, войти могут только перечисленные там аккаунты.
+   - Scopes добавлять не нужно: `youtube.readonly` приложение запросит само.
 
-Готово. Никакой `google-services.json` не нужен — `google_sign_in` находит клиент
-по совпадению package + SHA-1.
+Верификация у Google не нужна, пока проект в статусе Testing и пользуетесь им
+вы. Публичный веб-origin с этим скоупом её потребовал бы (политика приватности,
+демо-видео) — поэтому при обычном входе скоуп не запрашивается, а импорт
+остаётся Android-only.
 
 ## Как пользоваться
-Медиатека → значок импорта → **«Лайки YouTube Music (вход Google)»** → выбери свой
+
+Медиатека → значок импорта → **«Лайки YouTube Music (вход Google)»** → выбрать
 аккаунт → появится плейлист **«YouTube — Мне понравилось»**.
 
-## Если вход проходит, но API отвечает 403/ошибкой доступа
-В некоторых конфигурациях Android-клиента не хватает — добавь ещё один
-**OAuth client ID типа Web application** (в том же проекте) и скажи мне его
-Client ID: пропишу его как `serverClientId` в коде.
+## Если что-то не так
+
+| Симптом | Причина |
+|---|---|
+| Вход не открывается, ошибка 10 (DEVELOPER_ERROR) | SHA-1 этой сборки не зарегистрирован — проверить `firebase apps:android:sha:list <appId>` |
+| Вход проходит, лайки не грузятся (403) | Не включён YouTube Data API v3 в `count0-8424b` |
+| «Доступ заблокирован» | Аккаунт не добавлен в **Test users** на consent screen |
+| Работает в отладке, падает в релизе | Нет OAuth-клиента под релизный SHA-1 — самая частая ловушка |
 
 ## Важно про подпись
-Релизы теперь подписываются **выделенным release-ключом** (`roundds-release.jks`,
-см. [RELEASING.md](RELEASING.md)), а не debug-ключом. В OAuth-клиент Android
-нужно добавить SHA-1 этого ключа:
+
+Релизы подписываются **выделенным release-ключом** (`roundds-release.jks`, см.
+[RELEASING.md](RELEASING.md)), а не debug-ключом. Зарегистрированы оба
+отпечатка:
+
 ```
-45:F4:2C:F9:56:37:D1:6B:06:DA:CC:C6:7D:AD:ED:0D:1E:79:9E:C0
+85:D9:80:8F:F7:34:B6:34:B0:76:F5:FC:3F:C6:0A:0D:68:33:59:72   отладочный
+45:F4:2C:F9:56:37:D1:6B:06:DA:CC:C6:7D:AD:ED:0D:1E:79:9E:C0   релизный
 ```
-Старый debug-SHA-1 (`6B:FB:0F:90:79:77:6F:AD:A9:A3:C9:26:DB:E2:B0:27:28:7E:04:2E`)
-можно оставить — он всё ещё нужен для локальных debug-сборок (`flutter run`).
-В один OAuth-клиент можно добавить оба отпечатка.
+
+При смене ключа новый SHA-1 добавляется в Firebase → Project settings →
+приложение Android → **Add fingerprint**, затем перевыпускается конфиг:
+
+```bash
+flutterfire configure
+```
