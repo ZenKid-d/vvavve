@@ -165,8 +165,20 @@ class TasteProfile {
   }
 }
 
+/// Аргумент для [buildProfileOffThread]: `compute` принимает ровно одно
+/// значение, поэтому список событий и «сейчас» едут записью.
+typedef ProfileBuildArgs = ({List<ProfileEvent> events, int nowSec});
+
+/// Точка входа для `compute`: должна быть top-level функцией одного аргумента.
+///
+/// На мобильном уходит в отдельный изолейт, на вебе `compute` выполняет её
+/// на месте (изолейтов там нет) — результат одинаковый, разница только в том,
+/// подвиснет ли UI на большой истории.
+TasteProfile buildProfileOffThread(ProfileBuildArgs args) =>
+    TasteProfileBuilder.build(args.events, nowSec: args.nowSec);
+
 /// Строитель профиля из плоского списка событий. Чистая функция —
-/// пригодна для `Isolate.run`.
+/// пригодна для выполнения вне UI-потока (см. [buildProfileOffThread]).
 class TasteProfileBuilder {
   const TasteProfileBuilder._();
 

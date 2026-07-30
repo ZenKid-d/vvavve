@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'yt_download.dart';
 import '../../core/diagnostics.dart';
 import '../../domain/constants.dart';
 import '../../domain/models/album_result.dart';
@@ -906,46 +906,17 @@ class YoutubeMusicSource implements MusicSource {
     return null;
   }
 
-  /// Нативная потоковая загрузка через youtube_explode: сам качает аудио
-  /// чанками с корректными заголовками. Простой HTTP-GET по googlevideo-ссылке
-  /// часто отдаёт 403 (плеер играет ranged-стримингом, а полный GET — нет),
-  /// поэтому для скачивания YouTube этот путь надёжнее.
+  /// Нативная потоковая загрузка через youtube_explode — запись файла вынесена
+  /// в платформенный фасад [ytDownloadTo] (в браузере файлов нет).
   @override
   Future<bool> downloadTo(
     Track track,
     String path, {
     void Function(int received, int total)? onProgress,
   }) async {
-    IOSink? sink;
-    try {
-      final info = await _selectStream(track.id);
-      if (info == null) return false;
-      final total = info.size.totalBytes;
-      sink = File(path).openWrite();
-      var received = 0;
-      await for (final chunk in _yt.videos.streamsClient.get(info)) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) onProgress?.call(received, total);
-      }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-      return true;
-    } catch (e, st) {
-      // Не смогли — подчистим частичный файл и отдадим управление dio-пути.
-      // Логируем причину (раньше пустой catch скрывал, почему загрузка упала).
-      Diagnostics.instance
-          .warn('youtube', 'downloadTo через yt_explode упал: $e\n$st');
-      try {
-        await sink?.close();
-      } catch (_) {}
-      try {
-        final f = File(path);
-        if (f.existsSync()) f.deleteSync();
-      } catch (_) {}
-      return false;
-    }
+    final info = await _selectStream(track.id);
+    if (info == null) return false;
+    return ytDownloadTo(_yt, info, path, onProgress: onProgress);
   }
 
   /// Похожие треки (радио) для YouTube-трека через InnerTube `next`. Это

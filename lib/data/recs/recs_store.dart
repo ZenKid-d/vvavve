@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -240,7 +239,8 @@ class RecsStore extends ChangeNotifier {
 
   /// Строит профиль из event log и сохраняет снапшот. Само построение уходит
   /// в отдельный изолейт — при большой истории (до 5000 событий) проход по
-  /// логу с decay-взвешиванием не должен подвешивать UI-поток.
+  /// логу с decay-взвешиванием не должен подвешивать UI-поток. (На вебе
+  /// изолейтов нет, и `compute` считает на месте.)
   Future<TasteProfile> buildProfile({int maxEvents = 5000}) async {
     final events = await loadProfileEvents(limit: maxEvents);
     final now = _nowSec;
@@ -248,7 +248,8 @@ class RecsStore extends ChangeNotifier {
         // Малую историю не имеет смысла гонять через изолейт — накладные
         // расходы на его запуск дороже самого вычисления.
         ? TasteProfileBuilder.build(events, nowSec: now)
-        : await Isolate.run(() => TasteProfileBuilder.build(events, nowSec: now));
+        : await compute(
+            buildProfileOffThread, (events: events, nowSec: now));
     unawaited(_saveSnapshot(profile));
     return profile;
   }

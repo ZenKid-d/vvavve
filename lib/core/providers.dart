@@ -87,7 +87,10 @@ Dio buildAppDio({DohResolver? doh, String? proxy}) {
     },
   ));
   if (doh != null || (proxy ?? '').trim().isNotEmpty) {
-    dio.httpClientAdapter = buildDohDioAdapter(doh, proxy: proxy);
+    // На вебе адаптера обхода нет (см. doh_http_web.dart) — оставляем тот,
+    // что dio выбрал сам.
+    final adapter = buildDohDioAdapter(doh, proxy: proxy);
+    if (adapter != null) dio.httpClientAdapter = adapter;
   }
 
   // Автоповтор транзиентных обрывов. Только идемпотентные GET; статусные ошибки

@@ -1,13 +1,11 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:screenshot/screenshot.dart';
-import 'package:share_plus/share_plus.dart';
 
+import 'io/file_io.dart';
 import 'providers.dart';
 import 'theme/accent_provider.dart';
 import 'widgets/wordmark.dart';
@@ -39,15 +37,10 @@ Future<void> shareTrackCard(
       delay: const Duration(milliseconds: 30),
     );
 
-    final dir = await getTemporaryDirectory();
-    final f = File('${dir.path}/roundds_card.png');
-    await f.writeAsBytes(bytes);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(f.path)],
-        text: '${track.artist} — ${track.title} · vvavve',
-      ),
-    );
+    await shareBytes(bytes,
+        filename: 'roundds_card.png',
+        mime: 'image/png',
+        text: '${track.artist} — ${track.title} · vvavve');
   } catch (_) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

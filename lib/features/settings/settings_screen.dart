@@ -1,15 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'package:go_router/go_router.dart';
 
+import '../../core/io/file_io.dart';
 import '../../core/providers.dart';
 import '../../core/routing/app_router.dart' show Routes;
 import '../../core/theme/app_colors.dart';
@@ -334,15 +331,10 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
   try {
     final data = ref.read(libraryProvider).exportData();
     final json = const JsonEncoder.withIndent('  ').convert(data);
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/roundds_backup.json');
-    await file.writeAsString(json);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path)],
-        text: 'vvavve — резервная копия библиотеки',
-      ),
-    );
+    await shareTextFile(json,
+        filename: 'roundds_backup.json',
+        mime: 'application/json',
+        text: 'vvavve — резервная копия библиотеки');
   } catch (e) {
     if (context.mounted) {
       ScaffoldMessenger.of(context)
@@ -352,12 +344,9 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> _importBackup(BuildContext context, WidgetRef ref) async {
-  final file = await FilePicker.pickFile(
-      type: FileType.custom, allowedExtensions: ['json']);
-  final path = file?.path;
-  if (path == null) return;
+  final content = await pickJsonText();
+  if (content == null) return;
   try {
-    final content = await File(path).readAsString();
     final data = jsonDecode(content) as Map<String, dynamic>;
     await ref.read(libraryProvider).importData(data);
     if (context.mounted) {

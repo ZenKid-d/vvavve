@@ -1,15 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/album_menu.dart';
+import '../../core/io/file_io.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -354,12 +351,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _importPlaylistFile() async {
-    final file = await FilePicker.pickFile(
-        type: FileType.custom, allowedExtensions: ['json']);
-    final path = file?.path;
-    if (path == null) return;
+    final content = await pickJsonText();
+    if (content == null) return;
     try {
-      final data = jsonDecode(await File(path).readAsString());
+      final data = jsonDecode(content);
       final map = (data as Map).cast<String, dynamic>();
       final name = (map['name'] as String?) ?? 'Импортированный плейлист';
       final tracks = ((map['tracks'] as List?) ?? [])
@@ -756,16 +751,11 @@ Future<void> _exportPlaylist(PlaylistX pl) async {
       'tracks': pl.tracks.map((t) => t.toJson()).toList(),
     };
     final json = const JsonEncoder.withIndent('  ').convert(data);
-    final dir = await getTemporaryDirectory();
     final safe = pl.name.replaceAll(RegExp(r'[^\wА-Яа-яЁё -]'), '_');
-    final file = File('${dir.path}/$safe.json');
-    await file.writeAsString(json);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path)],
-        text: 'vvavve — плейлист «${pl.name}»',
-      ),
-    );
+    await shareTextFile(json,
+        filename: '$safe.json',
+        mime: 'application/json',
+        text: 'vvavve — плейлист «${pl.name}»');
   } catch (_) {/* отмена/ошибка шаринга не критична */}
 }
 

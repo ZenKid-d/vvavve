@@ -33,10 +33,12 @@ android {
         applicationId = "com.roundds.roundds"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // minSdk = 23 явно: flutter_secure_storage 10.x требует API 23+
-        // (EncryptedSharedPreferences). По умолчанию flutter.minSdkVersion = 21,
-        // что уронит secure_storage на Android 5.x. См. ROADMAP.md «Техдолг».
-        minSdk = 23
+        // flutter.minSdkVersion (в Flutter 3.44 это 24) — а не число: любое
+        // значение 16..23 инструмент Flutter молча переписывает сюда же при
+        // каждой сборке (MinSdkVersionMigration), так что держать здесь 23 не
+        // выйдет. Требование flutter_secure_storage 10.x (API 23+ ради
+        // EncryptedSharedPreferences) при этом выполняется с запасом.
+        minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName

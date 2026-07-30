@@ -1,5 +1,7 @@
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common/sqlite_api.dart';
+
+import 'db_factory.dart';
 
 /// Recs v2 — SQLite-хранилище: event log, дизлайки, cooldown, кэши похожести и
 /// дневных плейлистов, снапшот профиля. Миграции — onCreate/onUpgrade.
@@ -11,7 +13,8 @@ class RecsDb {
 
   static Future<RecsDb> open() async {
     try {
-      final base = await getDatabasesPath();
+      await initDbFactory(); // в браузере грузит sqlite3.wasm, на мобильном no-op
+      final base = await dbFactory.getDatabasesPath();
       return RecsDb._(await _openAt(p.join(base, 'recs.db')));
     } catch (_) {
       // Фолбэк: in-memory — recs не персистит, но приложение не падает на старте.
@@ -19,11 +22,13 @@ class RecsDb {
     }
   }
 
-  static Future<Database> _openAt(String path) => openDatabase(
+  static Future<Database> _openAt(String path) => dbFactory.openDatabase(
         path,
-        version: schemaVersion,
-        onCreate: _create,
-        onUpgrade: _upgrade,
+        options: OpenDatabaseOptions(
+          version: schemaVersion,
+          onCreate: _create,
+          onUpgrade: _upgrade,
+        ),
       );
 
   static Future<void> _create(Database db, int version) async {

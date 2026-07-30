@@ -59,6 +59,11 @@ dependencies:
   path_provider: ^2.1.4
   # Recs v2 «Моя волна» — event log / cooldowns / кэши похожести (SQLite)
   sqflite: ^2.4.0
+  # Типы (Database/DatabaseFactory) берём отсюда, а не из sqflite: они одни и те
+  # же у нативной и у wasm-реализации, поэтому код запросов не зависит от платформы.
+  sqflite_common: ^2.5.4
+  # SQLite в wasm поверх IndexedDB — им recs.db работает в браузере.
+  sqflite_common_ffi_web: ^1.0.0
   path: ^1.9.0
 
   # Бэкап/экспорт библиотеки
