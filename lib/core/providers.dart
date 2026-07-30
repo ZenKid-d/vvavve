@@ -13,6 +13,7 @@ import '../data/sources/vk_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import 'auth/auth_service.dart';
 import 'diagnostics.dart';
 import 'net/doh_http.dart';
 import 'net/doh_resolver.dart';
@@ -253,6 +254,15 @@ final recommendationServiceProvider = Provider<RecommendationService>(
 
 final googleYtImportProvider =
     Provider<GoogleYtImportService>((ref) => GoogleYtImportService());
+
+/// Вход в аккаунт (Google → Firebase). Живёт всё приложение: сервис
+/// не хранит состояния сам — оно в FirebaseAuth.
+final authServiceProvider = Provider<AuthService>((ref) => AuthService());
+
+/// Текущий пользователь. Пока авторизация не восстановлена — загрузка;
+/// значение null означает «не вошёл», и это полностью рабочий режим.
+final authStateProvider = StreamProvider<AppUser?>(
+    (ref) => ref.watch(authServiceProvider).authState);
 
 /// Переопределяется в main() экземпляром, связанным с плеером (оффлайн-файлы).
 final downloadsProvider = ChangeNotifierProvider<DownloadsController>(

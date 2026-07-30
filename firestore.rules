@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// Данные строго персональные: всё лежит под users/{uid}, и никто, кроме
+// владельца, туда не ходит. Публичного чтения нет нигде.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Метка времени обязана быть и не может быть из будущего.
+    //
+    // Ограничение сверху — не формальность: слияние разрешает конфликты по
+    // updatedAt, поэтому устройство со сбитыми часами, записав метку на год
+    // вперёд, навсегда выигрывало бы все конфликты и «замораживало» правки с
+    // других устройств. Пять минут — запас на нормальный перекос часов.
+    function sane() {
+      return request.resource.data.updatedAt is int
+          && request.resource.data.updatedAt > 1700000000000
+          && request.resource.data.updatedAt < request.time.toMillis() + 300000;
+    }
+
+    match /users/{uid} {
+      allow read, write: if owner(uid);
+
+      // История — журнал: дописывать можно, переписывать прошлое нельзя.
+      // Удаление разрешено ради подрезки по сроку хранения.
+      match /history/{eventId} {
+        allow read, create: if owner(uid);
+        allow update: if false;
+        allow delete: if owner(uid);
+      }
+
+      // Плейлисты: тело больших списков лежит в подколлекции чанков.
+      match /playlists/{playlistId} {
+        allow read: if owner(uid);
+        allow write: if owner(uid) && sane();
+
+        match /chunks/{chunkId} {
+          allow read, write: if owner(uid);
+        }
+      }
+
+      // Всё остальное — записи вида {p, updatedAt, deleted}: лайки, альбомы,
+      // дизлайки, артисты, статистика, устройства, сессия.
+      match /{collection}/{docId} {
+        allow read: if owner(uid);
+        allow write: if owner(uid) && sane();
+      }
+    }
+  }
+}

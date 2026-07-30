@@ -60,6 +60,32 @@
 Для GitHub Pages добавляется `--base-href /vvavve/`, а `index.html` копируется в
 `404.html`, иначе прямой заход на маршрут `go_router` даст 404.
 
+## Firebase
+
+Проект `count0-8424b`. Конфигурацию генерирует `flutterfire configure`
+(`lib/firebase_options.dart` + `android/app/google-services.json`) — оба файла
+коммитятся: там публичные идентификаторы, а настоящая граница безопасности —
+правила Firestore.
+
+Вход через Google сделан фасадом `core/auth/auth_service.dart`: на Android это
+системный диалог `google_sign_in`, чьи токены обмениваются на сессию Firebase,
+в браузере — `signInWithPopup` (веб-реализация `google_sign_in` потребовала бы
+meta-тега с client_id и своей кнопки GIS). Экземпляр `GoogleSignIn` теперь один
+на приложение (`core/auth/google_sign_in_shared.dart`): раньше импорт лайков
+YouTube держал собственный, а два экземпляра делят один аккаунт и незаметно
+ломают друг другу `signOut`. Скоуп `youtube.readonly` при обычном входе не
+запрашивается — он чувствительный, и его наличие потребовало бы верификации
+приложения у Google.
+
+**Правила Firestore лежат в `firestore.rules` и должны быть опубликованы**,
+иначе база останется с дефолтными (заблокированными или, хуже, открытыми):
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+Без входа приложение работает полностью — синхронизация только добавляется.
+
 ## Что дальше
 
 Ближайший этап — «веб собирается»: разделение `main.dart` на `bootstrap.dart` +

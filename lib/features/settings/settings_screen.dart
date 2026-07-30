@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/auth_service.dart' show AuthFailure;
 import '../../core/io/file_io.dart';
 import '../../core/providers.dart';
 import '../../core/routing/app_router.dart' show Routes;
@@ -28,6 +29,8 @@ class SettingsScreen extends ConsumerWidget {
       children: [
         const _RiskBanner(),
         const SizedBox(height: 12),
+        const _AccountTile(),
+        const SizedBox(height: 8),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.palette_outlined),
@@ -358,6 +361,73 @@ Future<void> _importBackup(BuildContext context, WidgetRef ref) async {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Ошибка импорта: $e')));
     }
+  }
+}
+
+/// Аккаунт: вход через Google для синхронизации между устройствами.
+///
+/// Приложение обязано работать и без входа — здесь это просто предложение,
+/// а не преграда. Пока состояние авторизации не восстановлено, показываем
+/// прежний вид строки (без мигания «не вошёл»).
+class _AccountTile extends ConsumerStatefulWidget {
+  const _AccountTile();
+
+  @override
+  ConsumerState<_AccountTile> createState() => _AccountTileState();
+}
+
+class _AccountTileState extends ConsumerState<_AccountTile> {
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+    } on AuthFailure catch (e) {
+      _snack(e.message);
+    } catch (e) {
+      _snack('Не удалось: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _snack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = ref.read(authServiceProvider);
+    final user = ref.watch(authStateProvider).value;
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: user?.photoUrl != null
+          ? CircleAvatar(backgroundImage: NetworkImage(user!.photoUrl!))
+          : const Icon(Icons.account_circle_outlined),
+      title: Text(user == null ? 'Войти через Google' : user.label),
+      subtitle: Text(
+        user == null
+            ? 'Синхронизация лайков, плейлистов и очереди между устройствами'
+            : 'Синхронизация включена',
+        style: TextStyle(color: AppColors.white45, fontSize: 11),
+      ),
+      trailing: _busy
+          ? const SizedBox(
+              width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          : Icon(user == null ? Icons.login : Icons.logout, size: 20),
+      onTap: _busy
+          ? null
+          : () => _run(() async {
+                if (user == null) {
+                  await auth.signIn();
+                } else {
+                  await auth.signOut();
+                }
+              }),
+    );
   }
 }
 

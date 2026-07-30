@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'firebase_options.dart';
 import 'core/diagnostics.dart';
 import 'core/downloads_controller.dart';
 import 'core/net/doh_http.dart';
@@ -55,6 +57,15 @@ class PlatformCaps {
 /// и Riverpod, восстанавливает прошлую сессию и запускает UI.
 Future<void> bootstrapApp(PlatformCaps caps) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Аккаунт и синхронизация. Падение здесь не должно уносить приложение:
+  // без Firebase оно обязано работать полностью, просто локально.
+  try {
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+  } catch (e) {
+    Diagnostics.instance.warn('firebase', 'Инициализация не удалась: $e');
+  }
 
   final prefs = await SharedPreferences.getInstance();
 
