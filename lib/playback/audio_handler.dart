@@ -162,10 +162,27 @@ class RoundsAudioHandler extends BaseAudioHandler {
     });
   }
 
+  /// Сообщает наружу, что сессия поменялась (для синхронизации между
+  /// устройствами). [important] — смена трека или пауза: такие моменты стоит
+  /// отправлять сразу, а не ждать очередного тика позиции.
+  void Function({required bool important})? onSessionSaved;
+
+  /// Текущее состояние сессии: очередь, место в ней и позиция в треке.
+  /// null — играть нечего, синхронизировать нечего.
+  ({List<Track> queue, int index, int positionMs})? get sessionState {
+    if (current == null || _queue.isEmpty) return null;
+    return (
+      queue: List<Track>.unmodifiable(_queue),
+      index: _index,
+      positionMs: _player.position.inMilliseconds,
+    );
+  }
+
   void _savePosition() {
     final prefs = _sessionPrefs;
     if (prefs == null || current == null || _queue.isEmpty) return;
     prefs.setInt('last_position_ms', _player.position.inMilliseconds);
+    onSessionSaved?.call(important: false);
   }
 
   void _saveSession() {
@@ -187,14 +204,20 @@ class RoundsAudioHandler extends BaseAudioHandler {
       Diagnostics.instance
           .warn('session', 'Не удалось сохранить сессию: $e\n$st');
     }
+    onSessionSaved?.call(important: true);
   }
 
   /// Восстанавливает прошлую сессию: ставит очередь и грузит текущий трек на
   /// паузе с сохранённой позиции. Резолв потока — в фоне (не блокирует старт).
-  Future<void> restoreSession(
-      List<Track> queue, int index, Duration position) async {
+  ///
+  /// [force] — заменить то, что уже стоит в очереди. Нужен переносу сессии с
+  /// другого устройства: там пользователь согласился на замену явно, а при
+  /// обычном восстановлении на старте перетирать ничего нельзя.
+  Future<void> restoreSession(List<Track> queue, int index, Duration position,
+      {bool force = false}) async {
     if (queue.isEmpty || index < 0 || index >= queue.length) return;
-    if (_queue.isNotEmpty) return; // уже что-то играем — не перетираем
+    if (_queue.isNotEmpty && !force) return; // уже что-то играем — не перетираем
+    if (force && _player.playing) await _player.pause();
     _queue
       ..clear()
       ..addAll(queue);

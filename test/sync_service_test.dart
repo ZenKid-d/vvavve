@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:roundds/core/library_controller.dart';
 import 'package:roundds/domain/models/source_type.dart';
 import 'package:roundds/domain/models/track.dart';
+import 'package:roundds/sync/session_host.dart';
+import 'package:roundds/sync/session_snapshot.dart';
 import 'package:roundds/sync/sync_service.dart';
 import 'package:roundds/sync/sync_transport.dart';
 import 'package:roundds/sync/synced_record.dart';
@@ -94,11 +96,36 @@ Track _t(String id, String artist) => Track(
       source: SourceType.youtube,
     );
 
+/// Плеер-пустышка: хранит очередь и умеет её принять. Настоящий требует
+/// audio_service и звук, а проверяем мы логику переноса.
+class FakePlayer implements SessionHost {
+  ({List<Track> queue, int index, int positionMs})? _state;
+  SessionSnapshot? adopted;
+  void Function({required bool important})? _cb;
+
+  @override
+  ({List<Track> queue, int index, int positionMs})? get state => _state;
+
+  @override
+  set onChanged(void Function({required bool important})? cb) => _cb = cb;
+
+  @override
+  Future<void> adopt(SessionSnapshot snapshot) async => adopted = snapshot;
+
+  /// Имитация игры: очередь встала, позиция поехала.
+  void play(List<Track> queue, int index, int positionMs,
+      {bool important = true}) {
+    _state = (queue: queue, index: index, positionMs: positionMs);
+    _cb?.call(important: important);
+  }
+}
+
 /// Одно «устройство»: свои prefs, своя библиотека, своя служба обмена.
 class _Device {
-  _Device(this.library, this.sync);
+  _Device(this.library, this.sync, this.player);
   final LibraryController library;
   final SyncService sync;
+  final FakePlayer player;
 }
 
 Future<_Device> _device(FakeCloud cloud, String name,
@@ -114,14 +141,19 @@ Future<_Device> _device(FakeCloud cloud, String name,
   });
   final prefs = await SharedPreferences.getInstance();
   final library = LibraryController(prefs);
+  final player = FakePlayer();
   final sync = SyncService(
     prefs: prefs,
     library: library,
     transportFactory: cloud.connect,
     // В бою отправка копится две секунды; в тесте ждать столько незачем.
     pushDelay: const Duration(milliseconds: 10),
+    session: player,
+    deviceId: name,
+    deviceLabel: name,
+    sessionThrottle: const Duration(milliseconds: 10),
   );
-  return _Device(library, sync);
+  return _Device(library, sync, player);
 }
 
 /// Даёт отработать подпискам и отложенной отправке.
@@ -231,6 +263,64 @@ void main() {
 
       expect(b.library.liked, isEmpty);
       expect(a.sync.state, SyncState.off);
+    });
+
+    test('сессия предлагается, но не подменяет очередь молча', () async {
+      final cloud = FakeCloud();
+
+      final a = await _device(cloud, 'телефон');
+      await a.sync.start('user1');
+      a.player.play([_t('1', 'Артист'), _t('2', 'Артист')], 1, 42000);
+      await _settle();
+
+      final b = await _device(cloud, 'браузер');
+      await b.sync.start('user1');
+      await _settle();
+
+      // Само по себе ничего не применилось — только предложение.
+      expect(b.player.adopted, isNull);
+      final pending = b.sync.pendingSession;
+      expect(pending, isNotNull);
+      expect(pending!.current?.id, '2');
+      expect(pending.position.inMilliseconds, 42000);
+      expect(pending.deviceLabel, 'телефон');
+
+      // Пользователь согласился — вот теперь применяем.
+      await b.sync.adoptSession(pending);
+      expect(b.player.adopted?.current?.id, '2');
+      expect(b.player.adopted?.queue, hasLength(2));
+    });
+
+    test('своя же сессия обратно не предлагается', () async {
+      final cloud = FakeCloud();
+
+      final a = await _device(cloud, 'телефон');
+      await a.sync.start('user1');
+      a.player.play([_t('1', 'Артист')], 0, 1000);
+      await _settle();
+
+      expect(a.sync.pendingSession, isNull,
+          reason: 'предлагать продолжить то, что здесь и играет, — бессмыслица');
+      expect(a.player.adopted, isNull);
+    });
+
+    test('длинная очередь режется окном вокруг текущего трека', () async {
+      final cloud = FakeCloud();
+
+      final a = await _device(cloud, 'телефон');
+      await a.sync.start('user1');
+      final long = [for (var i = 0; i < 500; i++) _t('$i', 'Артист')];
+      a.player.play(long, 300, 0);
+      await _settle();
+
+      final b = await _device(cloud, 'браузер');
+      await b.sync.start('user1');
+      await _settle();
+
+      final pending = b.sync.pendingSession!;
+      expect(pending.queue, hasLength(100));
+      // Главное — текущий трек не потерялся при обрезке.
+      expect(pending.current?.id, '300');
     });
 
     test('чужая библиотека не уезжает в новый аккаунт', () async {

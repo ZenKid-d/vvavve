@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/wordmark.dart';
+import '../../sync/sync_service.dart' show SyncService;
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
 import '../drawer/app_drawer.dart';
@@ -91,8 +92,38 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     Navigator.of(context).pop(); // закрыть Drawer
   }
 
+  /// Сессия с другого устройства: предлагаем продолжить, но не подменяем
+  /// очередь молча — здесь мог быть свой собранный список, а браузер всё равно
+  /// не даст заиграть без нажатия.
+  void _watchPendingSession() {
+    ref.listen<SyncService>(syncServiceProvider, (_, sync) {
+      final pending = sync.pendingSession;
+      final track = pending?.current;
+      if (pending == null || track == null || !mounted) return;
+      final where = pending.deviceLabel == null
+          ? 'с другого устройства'
+          : 'с устройства «${pending.deviceLabel}»';
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Продолжить «${track.title}» $where?'),
+        action: SnackBarAction(
+          label: 'Продолжить',
+          // Снимок захвачен здесь: предложение снимается сразу, чтобы не
+          // всплывать повторно, а нажатие должно сработать и после этого.
+          onPressed: () => ref.read(syncServiceProvider).adoptSession(pending),
+        ),
+        duration: const Duration(seconds: 12),
+      ));
+      // Молчаливый отказ тоже решение: если пользователь не нажал, повторно
+      // навязываться не будем.
+      sync.dismissPendingSession();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _watchPendingSession();
     return Scaffold(
       drawer: AppDrawer(current: _section, onSelect: _select),
       body: SafeArea(

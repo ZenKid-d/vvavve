@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // riverpod 3 вынес ChangeNotifierProvider/StateProvider в legacy-модуль
 // (курс на Notifier/AsyncNotifier) — полная миграция на новый API отдельной
@@ -15,6 +16,8 @@ import '../data/sources/vk_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
 import '../domain/models/source_type.dart';
+import '../playback/handler_session_host.dart';
+import '../sync/device_id.dart';
 import '../sync/firestore_transport.dart';
 import '../sync/sync_service.dart';
 import 'auth/auth_service.dart';
@@ -271,10 +274,14 @@ final authStateProvider = StreamProvider<AppUser?>(
 /// Обмен библиотекой с облаком. Сам по себе бездействует — включается и
 /// выключается вслед за входом (см. [syncBinderProvider]).
 final syncServiceProvider = ChangeNotifierProvider<SyncService>((ref) {
+  final prefs = ref.read(prefsProvider);
   final service = SyncService(
-    prefs: ref.read(prefsProvider),
+    prefs: prefs,
     library: ref.read(libraryProvider),
     transportFactory: (uid) => FirestoreTransport(uid),
+    session: HandlerSessionHost(ref.read(audioHandlerProvider)),
+    deviceId: DeviceId.ensure(prefs),
+    deviceLabel: kIsWeb ? 'браузер' : 'телефон',
   );
   ref.onDispose(service.dispose);
   return service;

@@ -5,7 +5,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/diagnostics.dart';
 import '../core/library_controller.dart';
+import 'session_host.dart';
+import 'session_snapshot.dart';
+import 'sync_clock.dart';
 import 'sync_transport.dart';
+import 'synced_record.dart';
 
 enum SyncState { off, syncing, idle, error }
 
@@ -24,14 +28,42 @@ class SyncService extends ChangeNotifier {
     required LibraryController library,
     required SyncTransport Function(String uid) transportFactory,
     Duration pushDelay = const Duration(seconds: 2),
+    SessionHost? session,
+    String deviceId = '',
+    String? deviceLabel,
+    Duration sessionThrottle = const Duration(seconds: 30),
   })  : _prefs = prefs,
         _library = library,
         _transportFactory = transportFactory,
-        _pushDelay = pushDelay;
+        _pushDelay = pushDelay,
+        _session = session,
+        _deviceId = deviceId,
+        _deviceLabel = deviceLabel,
+        _sessionThrottle = sessionThrottle;
 
   final SharedPreferences _prefs;
   final LibraryController _library;
   final SyncTransport Function(String uid) _transportFactory;
+  final SessionHost? _session;
+  final String _deviceId;
+  final String? _deviceLabel;
+
+  /// Как часто отправлять позицию во время игры. Смена трека и пауза уезжают
+  /// сразу — их пользователь и ждёт на другом устройстве.
+  final Duration _sessionThrottle;
+
+  /// Коллекция и документ сессии: она одна на аккаунт.
+  static const _sessionCollection = 'session';
+  static const _sessionDoc = 'current';
+
+  DateTime? _lastSessionPush;
+  Timer? _sessionTimer;
+
+  SessionSnapshot? _pendingSession;
+
+  /// Сессия с другого устройства, которую можно продолжить. Показывается как
+  /// предложение: молча подменять очередь, собранную здесь, нельзя.
+  SessionSnapshot? get pendingSession => _pendingSession;
 
   SyncTransport? _transport;
   String? _uid;
@@ -80,12 +112,17 @@ class SyncService extends ChangeNotifier {
     await _prefs.setString('sync_last_uid', uid);
 
     _library.addListener(_schedulePush);
+    _session?.onChanged = _onSessionChanged;
     _listen();
+    _listenSession();
     _schedulePush();
   }
 
   Future<void> stop() async {
     _pushDebounce?.cancel();
+    _sessionTimer?.cancel();
+    _session?.onChanged = null;
+    _pendingSession = null;
     _library.removeListener(_schedulePush);
     for (final s in _subs) {
       await s.cancel();
@@ -136,6 +173,100 @@ class SyncService extends ChangeNotifier {
 
     _lastSyncAt = DateTime.now();
     _setState(SyncState.idle);
+  }
+
+  // --- Сессия: очередь и позиция ---
+
+  void _listenSession() {
+    final transport = _transport;
+    if (transport == null || _session == null) return;
+    // Курсор здесь не нужен: документ один, и интересует всегда последний.
+    _subs.add(transport.watch(_sessionCollection, since: 0).listen(
+          _onRemoteSession,
+          onError: _onError,
+        ));
+  }
+
+  void _onRemoteSession(List<RemoteDoc> docs) {
+    if (docs.isEmpty) return;
+    final doc = docs.last;
+    if (doc.record.deleted || doc.record.value == null) return;
+    // Своя же сессия, вернувшаяся из облака: предлагать «продолжить здесь» то,
+    // что здесь и играет, — бессмысленно.
+    if (doc.record.origin == _deviceId) return;
+
+    final snapshot = SessionSnapshot.fromJson(
+      doc.record.value!,
+      updatedAt: doc.record.updatedAt,
+    );
+    if (snapshot.current == null) return;
+    _pendingSession = snapshot;
+    notifyListeners();
+  }
+
+  /// Переносит сессию. Вызывается только по явному согласию пользователя.
+  ///
+  /// Снимок передаётся аргументом, а не берётся из поля: предложение может быть
+  /// снято ещё до того, как пользователь нажмёт «продолжить».
+  Future<void> adoptSession(SessionSnapshot snapshot) async {
+    final host = _session;
+    if (host == null) return;
+    await host.adopt(snapshot);
+  }
+
+  Future<void> adoptPendingSession() async {
+    final snapshot = _pendingSession;
+    if (snapshot == null) return;
+    _pendingSession = null;
+    notifyListeners();
+    await adoptSession(snapshot);
+  }
+
+  void dismissPendingSession() {
+    if (_pendingSession == null) return;
+    _pendingSession = null;
+    notifyListeners();
+  }
+
+  void _onSessionChanged({required bool important}) {
+    if (!_signedIn || _session == null) return;
+    if (important) {
+      _sessionTimer?.cancel();
+      unawaited(_pushSession());
+      return;
+    }
+    // Тик позиции: отправляем не чаще, чем раз в _sessionThrottle.
+    final last = _lastSessionPush;
+    if (last != null && DateTime.now().difference(last) < _sessionThrottle) {
+      return;
+    }
+    unawaited(_pushSession());
+  }
+
+  Future<void> _pushSession() async {
+    final transport = _transport;
+    final state = _session?.state;
+    if (transport == null || state == null) return;
+    _lastSessionPush = DateTime.now();
+    try {
+      final snapshot = SessionSnapshot(
+        queue: state.queue,
+        index: state.index,
+        positionMs: state.positionMs,
+        deviceId: _deviceId,
+        deviceLabel: _deviceLabel,
+      ).windowed();
+      await transport.push(_sessionCollection, [
+        SyncedRecord<Map<String, dynamic>>(
+          key: _sessionDoc,
+          updatedAt: SyncClock.now(),
+          origin: _deviceId,
+          value: snapshot.toJson(),
+        ),
+      ]);
+    } catch (e) {
+      _onError(e);
+    }
   }
 
   void _schedulePush() {
