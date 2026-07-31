@@ -197,10 +197,14 @@ List<LyricLine> parseLrc(String lrc) {
 /// самой следующей, заливка отстаёт от артиста везде, где между строками есть
 /// вдох, проигрыш или пауза: он уже допел, а цвет ещё ползёт.
 ///
-/// Темп берётся из самой песни — по промежуткам между строками. Из выборки
-/// берётся не среднее и не медиана, а нижний квартиль: в распределении есть
-/// длинный хвост из строк, после которых идут паузы, и он тянет оценку вверх.
-/// Строки без пауз лежат плотной группой у нижнего края — она и нужна.
+/// Темп берётся из самой песни — по промежуткам между строками. В выборке две
+/// разные величины: плотная группа строк, спетых подряд (это и есть темп), и
+/// длинный хвост тех, после которых идёт пауза. Поэтому сначала по медиане
+/// отбрасывается хвост, а из оставшегося берётся **верхняя** граница группы.
+///
+/// Именно верхняя, а не средняя: строка без паузы должна окрашиваться ровно всю
+/// свою длину. Возьми оценку ниже — и такая строка допоётся раньше, чем её
+/// поёт артист, а это заметнее любого отставания.
 double estimateMsPerChar(List<LyricLine> lines) {
   const fallback = 85.0; // ≈700 знаков в минуту, обычный темп поп-вокала
   final samples = <double>[];
@@ -214,7 +218,12 @@ double estimateMsPerChar(List<LyricLine> lines) {
   }
   if (samples.isEmpty) return fallback;
   samples.sort();
-  return samples[(samples.length * 0.25).floor()].clamp(35.0, 200.0);
+
+  final median = samples[samples.length ~/ 2];
+  // Всё, что заметно медленнее середины, — это строки с паузами, а не пение.
+  final tight = samples.where((s) => s <= median * 1.5).toList();
+  final rate = tight.isEmpty ? median : tight.last;
+  return rate.clamp(35.0, 220.0);
 }
 
 /// Сколько времени реально поётся строка [i].
@@ -233,8 +242,11 @@ Duration singingSpan(List<LyricLine> lines, int i, double msPerChar) {
   if (len == 0) return gap; // пустая строка (♪) — просто ждём следующую
 
   final estimated = Duration(milliseconds: (len * msPerChar).round());
+  // Строка без паузы: оценка дотягивает до следующей строки — окрашиваем её
+  // целиком, всю длину. Укорачиваем только там, где дальше явно пауза.
   if (estimated > gap) return gap;
-  // Слишком быстрая заливка выглядит как рассинхрон не меньше, чем медленная.
-  final floor = Duration(milliseconds: (gap.inMilliseconds * 0.35).round());
-  return estimated < floor ? floor : estimated;
+  // Мгновенная вспышка вместо движения не читается как заливка.
+  const floor = Duration(milliseconds: 600);
+  if (estimated < floor) return gap < floor ? gap : floor;
+  return estimated;
 }
