@@ -6,14 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/accent_provider.dart';
+import '../../core/widgets/karaoke_backdrop.dart';
 import '../../core/widgets/karaoke_line.dart';
 import '../../data/lyrics_service.dart';
 import '../../domain/models/track.dart';
 
-/// Экран текста песни в стиле Яндекс Музыки: полноэкранный, поверх размытой
-/// обложки. Если есть синхронный текст (LRC) — «караоке» с плавной подсветкой
-/// и авто-прокруткой по центру; иначе — обычный текст (по цепочке источников,
-/// включая Genius). Открывается по умолчанию вместо обычного текста.
+/// Экран текста песни: полноэкранный. Если есть синхронный текст (LRC) —
+/// «караоке» с заливкой строки в такт, авто-прокруткой по центру и живым фоном
+/// из акцентных цветов; иначе — обычный текст поверх размытой обложки (по
+/// цепочке источников, включая Genius). Открывается по умолчанию вместо
+/// обычного текста.
 class LyricsScreen extends ConsumerStatefulWidget {
   const LyricsScreen({super.key, required this.track});
   final Track track;
@@ -33,24 +35,54 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   final Map<int, String> _tr = {}; // перевод по индексу строки
   int _offsetMs = 0; // ручная подстройка синхронизации
 
+  /// Трек, для которого сейчас показан текст. Экран открывается для
+  /// конкретного трека, но остаётся открытым и когда очередь идёт дальше —
+  /// тогда он должен показывать уже новый текст, а не прошлый.
+  late Track _track = widget.track;
+
+  /// Номер загрузки: ответ на запрос по прошлому треку может прийти после
+  /// того, как трек уже сменился, и затереть актуальный текст.
+  int _fetchGen = 0;
+
   @override
   void initState() {
     super.initState();
     _fetch();
   }
 
+  /// Следит за сменой трека в плеере.
+  void _syncWithPlayer() {
+    final current = ref.watch(playbackProvider).current;
+    if (current == null || current.uid == _track.uid) return;
+    _track = current;
+    // Прошлый текст убираем сразу: показывать чужие строки под новую песню
+    // хуже, чем показать загрузку.
+    _lyrics = null;
+    _lines = const [];
+    _tr.clear();
+    _active = -1;
+    _offsetMs = 0; // подстройка синхронизации относится к прошлой песне
+    _loading = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fetch();
+    });
+  }
+
   Future<void> _fetch() async {
+    final gen = ++_fetchGen;
+    final track = _track;
     final l = await ref.read(lyricsServiceProvider).fetch(
-          artist: widget.track.artist,
-          title: widget.track.title,
-          duration: widget.track.duration,
+          artist: track.artist,
+          title: track.title,
+          duration: track.duration,
         );
-    if (!mounted) return;
+    if (!mounted || gen != _fetchGen) return;
     setState(() {
       _lyrics = l;
       _lines = (l?.hasSynced ?? false) ? parseLrc(l!.synced!) : [];
       _loading = false;
     });
+    if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
   @override
@@ -105,17 +137,32 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
     // вытянут из обложки играющего трека, и заливка текста попадает в его
     // палитру. Тема же отражает выбранный режим оформления в целом.
     final accent = ref.watch(effectiveAccentProvider);
+    _syncWithPlayer();
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (widget.track.artworkUrl != null)
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
-              child: CachedNetworkImage(
-                  imageUrl: widget.track.artworkUrl!, fit: BoxFit.cover),
-            ),
-          Container(color: Colors.black.withValues(alpha: 0.76)),
+          // В караоке фон живой и целиком из акцента; статичный текст — на
+          // размытой обложке, как было. Причина в читаемости: обложка даёт
+          // случайные светлые пятна, на которых белые буквы пропадают, и это
+          // особенно мешает, когда взгляд бежит по строкам за музыкой.
+          if (_lines.isNotEmpty)
+            KaraokeBackdrop(
+              accent: accent,
+              playing: ref.watch(playbackProvider).isPlaying,
+              // Удар — смена строки: это разметка самой песни, то есть отклик
+              // заведомо попадает в музыку.
+              beat: _active,
+            )
+          else ...[
+            if (_track.artworkUrl != null)
+              ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
+                child: CachedNetworkImage(
+                    imageUrl: _track.artworkUrl!, fit: BoxFit.cover),
+              ),
+            Container(color: Colors.black.withValues(alpha: 0.76)),
+          ],
           SafeArea(
             child: Column(
               children: [
