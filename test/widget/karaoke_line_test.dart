@@ -43,6 +43,14 @@ void main() {
     expect(find.byType(Text), findsOneWidget);
   });
 
+  test('неспетая часть активной строки тусклая, а не белая', () {
+    // Тот самый баг: строка рисовалась сплошным белым, заливка ложилась поверх
+    // и почти не читалась — со стороны это выглядело как мгновенное
+    // окрашивание целиком, сколько бы ни длилось само движение.
+    expect(KaraokeLine.unsung.a, lessThan(0.6));
+    expect(KaraokeLine.unsung, isNot(Colors.white));
+  });
+
   testWidgets('неактивные строки бледнеют по мере удаления', (tester) async {
     await tester.pumpWidget(_wrap(const KaraokeLine(
       text: 'строка',

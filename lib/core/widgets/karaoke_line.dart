@@ -37,6 +37,14 @@ class KaraokeLine extends StatelessWidget {
   /// выглядел бы как ошибка отрисовки, а не как движение.
   static const _edge = 26.0;
 
+  /// Цвет ещё не спетой части активной строки.
+  ///
+  /// Приглушённый, а не белый: строка должна сначала быть тусклой и
+  /// окрашиваться по мере пения. Сплошной белый снизу делает заливку почти
+  /// незаметной — строка выглядит вспыхнувшей целиком, сколько бы ни длилось
+  /// само окрашивание.
+  static const unsung = Color(0x6BFFFFFF); // белый, 42%
+
   @override
   Widget build(BuildContext context) {
     final base = DefaultTextStyle.of(context).style;
@@ -44,10 +52,11 @@ class KaraokeLine extends StatelessWidget {
       fontSize: active ? 25 : 19,
       height: 1.28,
       fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-      // Цвет для неактивных строк: чуть подкрашены акцентом, чтобы экран
+      // Активная строка рисуется в два слоя: снизу — ещё не спетая часть,
+      // поверх неё заливка. Неактивные чуть подкрашены акцентом, чтобы экран
       // читался как одно целое, но не спорили с активной за внимание.
       color: active
-          ? Colors.white
+          ? unsung
           : Color.lerp(Colors.white, accent, 0.35)!.withValues(alpha: dim),
       shadows: active
           ? [
