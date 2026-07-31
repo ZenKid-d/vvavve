@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -15,7 +16,15 @@ class KaraokeBackdrop extends StatefulWidget {
     required this.accent,
     this.playing = true,
     this.beat = 0,
+    this.spectrum,
   });
+
+  /// Полосы спектра, если реальный анализ доступен. Тогда фон пульсирует по
+  /// самому звуку — по низким частотам, то есть по бочке и басу.
+  ///
+  /// null — обычный случай (в браузере анализа нет, на Android он требует
+  /// включённой настройки и разрешения микрофона). Тогда пульс идёт по [beat].
+  final Stream<List<double>>? spectrum;
 
   final Color accent;
 
@@ -37,8 +46,10 @@ class KaraokeBackdrop extends StatefulWidget {
   State<KaraokeBackdrop> createState() => _KaraokeBackdropState();
 }
 
+// Тикеров два — движение пятен и вспышка на удар, поэтому не Single-версия
+// миксина: она допускает ровно один и падает на втором контроллере.
 class _KaraokeBackdropState extends State<KaraokeBackdrop>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     // Полный оборот — минута: за строку песни картинка успевает заметно
@@ -53,10 +64,16 @@ class _KaraokeBackdropState extends State<KaraokeBackdrop>
     duration: const Duration(milliseconds: 900),
   );
 
+  /// Энергия низких частот, 0..1. Отдельным уведомителем: приходит она часто
+  /// (десятки раз в секунду), и перестраивать из-за неё всё дерево незачем.
+  final ValueNotifier<double> _bass = ValueNotifier(0);
+  StreamSubscription<List<double>>? _spectrumSub;
+
   @override
   void initState() {
     super.initState();
     if (widget.playing) _c.repeat();
+    _listenSpectrum();
   }
 
   @override
@@ -67,13 +84,43 @@ class _KaraokeBackdropState extends State<KaraokeBackdrop>
     } else if (!widget.playing && _c.isAnimating) {
       _c.stop();
     }
-    if (widget.beat != old.beat && widget.playing) {
+    // Пульс по строке нужен, только когда настоящего звука нет: иначе он
+    // спорил бы с ударами и сбивал их.
+    if (widget.spectrum == null &&
+        widget.beat != old.beat &&
+        widget.playing) {
       _pulse.forward(from: 0);
     }
+    if (widget.spectrum != old.spectrum) _listenSpectrum();
+  }
+
+  void _listenSpectrum() {
+    _spectrumSub?.cancel();
+    _spectrumSub = null;
+    _bass.value = 0;
+    final spectrum = widget.spectrum;
+    if (spectrum == null) return;
+
+    _spectrumSub = spectrum.listen((bands) {
+      if (bands.isEmpty) return;
+      // Нижняя пятая часть спектра — бочка и бас. Именно они читаются как
+      // «бит»; по полной сумме фон дышал бы на вокале и тарелках.
+      final low = (bands.length / 5).ceil();
+      var sum = 0.0;
+      for (var i = 0; i < low; i++) {
+        sum += bands[i];
+      }
+      final level = (sum / low).clamp(0.0, 1.0);
+      // Резкий подъём и мягкий спад: удар должен ощущаться толчком, а не
+      // плавной волной, но и не дёргаться на каждом кадре.
+      _bass.value = level > _bass.value ? level : _bass.value * 0.86;
+    });
   }
 
   @override
   void dispose() {
+    _spectrumSub?.cancel();
+    _bass.dispose();
     _pulse.dispose();
     _c.dispose();
     super.dispose();
@@ -82,19 +129,25 @@ class _KaraokeBackdropState extends State<KaraokeBackdrop>
   @override
   Widget build(BuildContext context) => RepaintBoundary(
         child: AnimatedBuilder(
-          animation: Listenable.merge([_c, _pulse]),
+          animation: Listenable.merge([_c, _pulse, _bass]),
           builder: (context, _) => CustomPaint(
             painter: _BackdropPainter(
               accent: widget.accent,
               t: _c.value,
               // Между ударами — едва заметное дыхание, чтобы фон не замирал
               // на длинных строках и в проигрышах.
-              pulse: _pulseValue + 0.12 * (0.5 + 0.5 * sin(_c.value * 2 * pi * 6)),
+              pulse: _currentPulse +
+                  0.12 * (0.5 + 0.5 * sin(_c.value * 2 * pi * 6)),
             ),
             size: Size.infinite,
           ),
         ),
       );
+
+  /// Настоящий звук главнее: когда спектр доступен, фон живёт по нему, а
+  /// построчный пульс молчит.
+  double get _currentPulse =>
+      widget.spectrum != null ? _bass.value : _pulseValue;
 
   /// Резкая атака (первые 12% времени) и долгий спад.
   double get _pulseValue {

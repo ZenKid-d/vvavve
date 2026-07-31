@@ -8,7 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../providers.dart';
 import '../theme/theme_settings.dart';
-import '../../data/visualizer_channel.dart';
+import '../../data/visualizer_session.dart';
 
 /// Спектр-визуализатор под обложкой. При включённом «реальном» режиме берёт FFT
 /// из нативного Android Visualizer (реагирует на звук/бит); иначе — декоративная
@@ -85,12 +85,14 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
       return;
     }
     final sid = ref.read(audioHandlerProvider).androidAudioSessionId ?? 0;
-    final started = await VisualizerChannel.instance.start(sid);
-    if (!started) {
+    // Через общего владельца: спектр нужен ещё и фону караоке, а прямой
+    // stop() из одного места оборвал бы поток другому.
+    final bands = await VisualizerSession.instance.acquire(sid);
+    if (bands == null) {
       _started = false;
       return;
     }
-    _sub = VisualizerChannel.instance.bands.listen((b) {
+    _sub = bands.listen((b) {
       if (!mounted) return;
       // Сглаживание: быстрый рост, плавный спад (эффект «отпускания» полос).
       if (_smooth.length != b.length) _smooth = List<double>.filled(b.length, 0);
@@ -110,7 +112,7 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
     _sub = null;
     _started = false;
     _smooth = [];
-    VisualizerChannel.instance.stop();
+    VisualizerSession.instance.release();
     // Реальный захват выключен — возвращаем декоративную волну (если разрешена).
     if (resumeDecor && mounted) _applyDecorAnim();
   }

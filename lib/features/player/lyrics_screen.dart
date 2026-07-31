@@ -1,14 +1,17 @@
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/accent_provider.dart';
 import '../../core/widgets/karaoke_backdrop.dart';
 import '../../core/widgets/karaoke_line.dart';
 import '../../data/lyrics_service.dart';
+import '../../data/visualizer_session.dart';
 import '../../domain/models/track.dart';
 
 /// Экран текста песни: полноэкранный. Если есть синхронный текст (LRC) —
@@ -55,10 +58,38 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   /// экран. Уведомление доставляет изменение адресно, не трогая список.
   final _beat = ValueNotifier<int>(-1);
 
+  /// Поток полос спектра, если реальный анализ доступен: тогда фон пульсирует
+  /// по самому звуку, а не по строкам.
+  Stream<List<double>>? _spectrum;
+  bool _spectrumHeld = false;
+
   @override
   void initState() {
     super.initState();
     _fetch();
+    _maybeUseSpectrum();
+  }
+
+  /// Подключает реальный спектр — если пользователь уже включил визуализатор и
+  /// разрешил микрофон.
+  ///
+  /// Разрешение здесь намеренно НЕ запрашивается: системный диалог про
+  /// микрофон, всплывший при открытии текста песни, выглядел бы как минимум
+  /// странно. Не сложилось — фон пульсирует по строкам, и это не хуже.
+  Future<void> _maybeUseSpectrum() async {
+    if (kIsWeb) return; // нативного анализа в браузере нет
+    if (!(ref.read(prefsProvider).getBool('real_visualizer') ?? false)) return;
+    if (!await Permission.microphone.isGranted) return;
+
+    final sid = ref.read(audioHandlerProvider).androidAudioSessionId ?? 0;
+    final bands = await VisualizerSession.instance.acquire(sid);
+    if (!mounted) {
+      if (bands != null) VisualizerSession.instance.release();
+      return;
+    }
+    if (bands == null) return;
+    _spectrumHeld = true;
+    setState(() => _spectrum = bands);
   }
 
   /// Следит за сменой трека в плеере.
@@ -100,6 +131,9 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
 
   @override
   void dispose() {
+    // Сессию обязательно отпустить: захват общий, и незакрытая ссылка держала
+    // бы нативный анализ включённым после ухода с экрана.
+    if (_spectrumHeld) VisualizerSession.instance.release();
     _beat.dispose();
     _scroll.dispose();
     super.dispose();
@@ -165,8 +199,10 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
               builder: (context, beat, _) => KaraokeBackdrop(
                 accent: accent,
                 playing: ref.watch(playbackProvider).isPlaying,
-                // Удар — смена строки: это разметка самой песни, то есть
-                // отклик заведомо попадает в музыку.
+                // Есть спектр — пульс идёт по низким частотам, то есть по
+                // настоящему биту. Нет — по смене строки: это разметка самой
+                // песни, так что отклик всё равно попадает в музыку.
+                spectrum: _spectrum,
                 beat: beat,
               ),
             )
