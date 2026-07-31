@@ -44,6 +44,9 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   /// того, как трек уже сменился, и затереть актуальный текст.
   int _fetchGen = 0;
 
+  /// Темп пения этой песни — оценивается один раз по её же разметке.
+  double _msPerChar = 85;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +83,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
     setState(() {
       _lyrics = l;
       _lines = (l?.hasSynced ?? false) ? parseLrc(l!.synced!) : [];
+      _msPerChar = estimateMsPerChar(_lines);
       _loading = false;
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
@@ -93,16 +97,15 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
 
   /// Насколько спета строка [i] к моменту [pos], 0..1.
   ///
-  /// Длительность строки — расстояние до следующей: в LRC хранится только
-  /// момент начала. У последней строки нет следующей, поэтому берём типичные
-  /// четыре секунды: точнее взять неоткуда, а заливка не должна замереть.
+  /// Заливка идёт не до следующей строки, а ровно столько, сколько строка
+  /// поётся: в LRC записан только момент начала, и растягивание на весь
+  /// промежуток заставляло цвет ползти всё время вдоха или проигрыша, отставая
+  /// от артиста. Длительность оценивается по длине текста и темпу самой песни
+  /// (см. [singingSpan]).
   double _progressAt(int i, Duration pos) {
     if (i < 0 || i >= _lines.length) return 0;
     final start = _lines[i].time;
-    final end = i + 1 < _lines.length
-        ? _lines[i + 1].time
-        : start + const Duration(seconds: 4);
-    final span = (end - start).inMilliseconds;
+    final span = singingSpan(_lines, i, _msPerChar).inMilliseconds;
     if (span <= 0) return 1;
     return ((pos - start).inMilliseconds / span).clamp(0.0, 1.0);
   }

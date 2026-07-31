@@ -190,3 +190,51 @@ List<LyricLine> parseLrc(String lrc) {
   out.sort((a, b) => a.time.compareTo(b.time));
   return out;
 }
+
+/// Оценка темпа пения: сколько миллисекунд приходится на символ текста.
+///
+/// В LRC есть только момент НАЧАЛА строки. Если считать, что строка поётся до
+/// самой следующей, заливка отстаёт от артиста везде, где между строками есть
+/// вдох, проигрыш или пауза: он уже допел, а цвет ещё ползёт.
+///
+/// Темп берётся из самой песни — по промежуткам между строками. Из выборки
+/// берётся не среднее и не медиана, а нижний квартиль: в распределении есть
+/// длинный хвост из строк, после которых идут паузы, и он тянет оценку вверх.
+/// Строки без пауз лежат плотной группой у нижнего края — она и нужна.
+double estimateMsPerChar(List<LyricLine> lines) {
+  const fallback = 85.0; // ≈700 знаков в минуту, обычный темп поп-вокала
+  final samples = <double>[];
+  for (var i = 0; i + 1 < lines.length; i++) {
+    final len = lines[i].text.trim().length;
+    if (len < 4) continue; // короткие вроде «Yeah» ничего не говорят о темпе
+    final span = (lines[i + 1].time - lines[i].time).inMilliseconds;
+    // Промежутки длиннее 15 секунд — это уже проигрыш, а не медленное пение.
+    if (span <= 0 || span > 15000) continue;
+    samples.add(span / len);
+  }
+  if (samples.isEmpty) return fallback;
+  samples.sort();
+  return samples[(samples.length * 0.25).floor()].clamp(35.0, 200.0);
+}
+
+/// Сколько времени реально поётся строка [i].
+///
+/// Не дольше, чем до следующей строки (иначе заливка перескочит на чужую), и не
+/// быстрее разумного предела — оценка темпа может ошибиться на строке с
+/// растянутыми гласными.
+Duration singingSpan(List<LyricLine> lines, int i, double msPerChar) {
+  if (i < 0 || i >= lines.length) return Duration.zero;
+  final len = lines[i].text.trim().length;
+  // У последней строки следующей нет: ориентируемся только на длину текста.
+  final gap = i + 1 < lines.length
+      ? lines[i + 1].time - lines[i].time
+      : Duration(milliseconds: (len * msPerChar).round());
+  if (gap <= Duration.zero) return Duration.zero;
+  if (len == 0) return gap; // пустая строка (♪) — просто ждём следующую
+
+  final estimated = Duration(milliseconds: (len * msPerChar).round());
+  if (estimated > gap) return gap;
+  // Слишком быстрая заливка выглядит как рассинхрон не меньше, чем медленная.
+  final floor = Duration(milliseconds: (gap.inMilliseconds * 0.35).round());
+  return estimated < floor ? floor : estimated;
+}
