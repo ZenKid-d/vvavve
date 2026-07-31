@@ -86,7 +86,7 @@ class KaraokeLine extends StatelessWidget {
 
           return CustomPaint(
             size: Size(constraints.maxWidth, painter.height),
-            painter: _KaraokePainter(
+            painter: KaraokePainter(
               painter: painter,
               progress: p,
               sung: _lighten(accent),
@@ -144,8 +144,9 @@ class KaraokeLine extends StatelessWidget {
 /// блока. Длинная строка переносится на две, и градиент во всю ширину заливал бы
 /// обе одинаково: начало второй строки закрашивалось раньше, чем конец первой.
 /// Поэтому доля раскладывается по строкам последовательно, как их и читают.
-class _KaraokePainter extends CustomPainter {
-  _KaraokePainter({
+@visibleForTesting
+class KaraokePainter extends CustomPainter {
+  KaraokePainter({
     required this.painter,
     required this.progress,
     required this.sung,
@@ -169,41 +170,44 @@ class _KaraokePainter extends CustomPainter {
     // «половина спета» означает середину текста, а не середину каждой строки.
     final widths = KaraokeLine.sungWidths(lines, progress);
 
-    canvas.saveLayer(Offset.zero & size, Paint());
-    // Спетый текст поверх — пока во всю строку, лишнее срежем маской ниже.
-    _sungPainter(size).paint(canvas, Offset.zero);
-
-    // Маска: непрозрачное там, где уже спето, с мягким затуханием на границе.
-    // Всё, что маска не покрыла, dstIn делает прозрачным.
+    // Спетые куски строк. Отсечение — именно отсечением, а не режимом
+    // наложения: режим действует только на пиксели, которые накрыла сама
+    // фигура, поэтому «стереть всё за прямоугольником» им нельзя — текст за
+    // границей оставался бы нарисованным, и строка красилась бы целиком.
+    final sungArea = Path();
+    final fades = <Rect>[];
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
       final width = widths[i];
       if (width <= 0) break;
       final top = line.baseline - line.ascent;
+      sungArea.addRect(Rect.fromLTWH(line.left, top, width, line.height));
 
-      final solid = width - KaraokeLine._edge;
-      if (solid > 0) {
-        canvas.drawRect(
-          Rect.fromLTWH(line.left, top, solid, line.height),
-          Paint()..blendMode = BlendMode.dstIn,
-        );
-      }
       // Хвост границы гасим градиентом — резкий край читался бы как артефакт.
-      final fadeFrom = solid > 0 ? line.left + solid : line.left;
-      final fadeTo = line.left + width;
-      if (fadeTo > fadeFrom) {
-        final fade = Rect.fromLTRB(fadeFrom, top, fadeTo, top + line.height);
-        canvas.drawRect(
-          fade,
-          Paint()
-            ..blendMode = BlendMode.dstIn
-            ..shader = LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [Colors.white, Colors.white.withValues(alpha: 0)],
-            ).createShader(fade),
-        );
-      }
+      final from = line.left + width - KaraokeLine._edge;
+      final to = line.left + width;
+      if (to > from) fades.add(Rect.fromLTRB(from, top, to, top + line.height));
+    }
+
+    canvas.saveLayer(Offset.zero & size, Paint());
+    canvas.save();
+    canvas.clipPath(sungArea);
+    _sungPainter(size).paint(canvas, Offset.zero);
+    canvas.restore();
+
+    // Растушёвка переднего края: здесь режим наложения уместен — он работает
+    // ровно в пределах узкой полосы, которую и надо сгладить.
+    for (final fade in fades) {
+      canvas.drawRect(
+        fade,
+        Paint()
+          ..blendMode = BlendMode.dstIn
+          ..shader = LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Colors.white, Colors.white.withValues(alpha: 0)],
+          ).createShader(fade),
+      );
     }
     canvas.restore();
   }
@@ -240,7 +244,7 @@ class _KaraokePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_KaraokePainter old) =>
+  bool shouldRepaint(KaraokePainter old) =>
       old.progress != progress ||
       old.sung != sung ||
       old.sungDeep != sungDeep ||
