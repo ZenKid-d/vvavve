@@ -47,6 +47,14 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   /// Темп пения этой песни — оценивается один раз по её же разметке.
   double _msPerChar = 85;
 
+  /// Номер активной строки для фона.
+  ///
+  /// Отдельным ValueNotifier, а не полем: активная строка вычисляется внутри
+  /// билдера списка, и присваивание полю корневой build не перестраивает —
+  /// фон узнавал бы о смене строки только когда что-то другое перерисует
+  /// экран. Уведомление доставляет изменение адресно, не трогая список.
+  final _beat = ValueNotifier<int>(-1);
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +72,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
     _lines = const [];
     _tr.clear();
     _active = -1;
+    _beat.value = -1;
     _offsetMs = 0; // подстройка синхронизации относится к прошлой песне
     _loading = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -91,6 +100,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
 
   @override
   void dispose() {
+    _beat.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -150,12 +160,15 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
           // случайные светлые пятна, на которых белые буквы пропадают, и это
           // особенно мешает, когда взгляд бежит по строкам за музыкой.
           if (_lines.isNotEmpty)
-            KaraokeBackdrop(
-              accent: accent,
-              playing: ref.watch(playbackProvider).isPlaying,
-              // Удар — смена строки: это разметка самой песни, то есть отклик
-              // заведомо попадает в музыку.
-              beat: _active,
+            ValueListenableBuilder<int>(
+              valueListenable: _beat,
+              builder: (context, beat, _) => KaraokeBackdrop(
+                accent: accent,
+                playing: ref.watch(playbackProvider).isPlaying,
+                // Удар — смена строки: это разметка самой песни, то есть
+                // отклик заведомо попадает в музыку.
+                beat: beat,
+              ),
             )
           else ...[
             if (_track.artworkUrl != null)
@@ -269,7 +282,13 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
       final idx = _lineFor(pos);
       if (idx != _active) {
         _active = idx;
-        WidgetsBinding.instance.addPostFrameCallback((_) => _centerActive());
+        // Оба действия — следующим кадром: менять состояние прямо во время
+        // сборки нельзя, а фон и прокрутка подождут один кадр без потерь.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _centerActive();
+          _beat.value = idx;
+        });
       }
       // Ленивый перевод активной строки.
       if (_translate &&
