@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/net/net_errors.dart';
+
 /// Импорт публичного плейлиста/альбома Spotify по ссылке — тянем ТОЛЬКО
 /// метаданные (название + артист) со страницы embed, играем потом из
 /// свободных источников (YouTube/SoundCloud). Это не обход DRM: аудио Spotify
@@ -34,7 +36,8 @@ class SpotifyImportService {
       );
       html = r.data ?? '';
     } catch (e) {
-      throw SpotifyImportException('Не удалось открыть страницу Spotify ($e).');
+      throw SpotifyImportException(
+          'Не удалось открыть страницу Spotify (${describeNetError(e)}).');
     }
     return parseEmbed(html);
   }

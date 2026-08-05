@@ -118,7 +118,8 @@ class Aggregator {
           return await s.search(query, limit: perSource);
         } catch (e) {
           _logDnsBlock(e);
-          Diagnostics.instance.warn('agg.search', '${s.type.id} «$query»: $e');
+          Diagnostics.instance.warn(
+              'agg.search', '${s.type.id} «$query»: ${describeNetError(e)}');
           return <Track>[];
         }
       });
@@ -174,7 +175,8 @@ class Aggregator {
         try {
           return await s.feed(limit: perSource);
         } catch (e) {
-          Diagnostics.instance.warn('agg.feed', '${s.type.id}: $e');
+          Diagnostics.instance
+              .warn('agg.feed', '${s.type.id}: ${describeNetError(e)}');
           return <Track>[];
         }
       });
@@ -214,7 +216,8 @@ class Aggregator {
         // причину (протухший токен, изменение API источника) сохраняем для
         // диагностики.
         Diagnostics.instance.warn(
-            'aggregator', 'albumTracks($albumId) ${track.source.id} упал: $e');
+            'aggregator',
+            'albumTracks($albumId) ${track.source.id} упал: ${describeNetError(e)}');
       }
     }
     final q = '${track.artist} ${track.album ?? ''}'.trim();
@@ -230,7 +233,8 @@ class Aggregator {
       return results.where((t) => _sameArtist(track.artist, t.artist)).toList();
     } catch (e) {
       Diagnostics.instance
-          .warn('aggregator', 'albumTracks фолбэк-поиск «$q» упал: $e');
+          .warn('aggregator',
+              'albumTracks фолбэк-поиск «$q» упал: ${describeNetError(e)}');
       return const [];
     }
   }
@@ -263,7 +267,8 @@ class Aggregator {
       if (src is VkSource) return await src.artistProfile(seed);
       return null;
     } catch (e) {
-      Diagnostics.instance.warn('aggregator', 'artistProfile упал: $e');
+      Diagnostics.instance
+          .warn('aggregator', 'artistProfile упал: ${describeNetError(e)}');
       return null;
     }
   }

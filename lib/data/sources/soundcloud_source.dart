@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
+import '../../core/net/net_errors.dart';
 import '../../domain/constants.dart';
 import '../../domain/models/album_result.dart';
 import '../../domain/models/artist_profile.dart';
@@ -126,8 +127,9 @@ class SoundcloudSource implements MusicSource {
           .toList();
     } catch (e) {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
-      Diagnostics.instance.warn('sc.search', '«$query»: $e');
-      throw SourceException(type, 'ошибка поиска ($e)');
+      final why = describeNetError(e);
+      Diagnostics.instance.warn('sc.search', '«$query»: $why');
+      throw SourceException(type, 'ошибка поиска ($why)');
     }
   }
 
@@ -151,7 +153,8 @@ class SoundcloudSource implements MusicSource {
           .whereType<AlbumResult>()
           .toList();
     } catch (e) {
-      Diagnostics.instance.warn('sc.searchAlbums', '«$query»: $e');
+      Diagnostics.instance
+          .warn('sc.searchAlbums', '«$query»: ${describeNetError(e)}');
       return const [];
     }
   }
@@ -196,7 +199,8 @@ class SoundcloudSource implements MusicSource {
           }
         } catch (e) {
           Diagnostics.instance
-              .warn('sc.albumTracks.hydrate', '$albumId: $e');
+              .warn('sc.albumTracks.hydrate',
+                  '$albumId: ${describeNetError(e)}');
         }
       }
 
@@ -209,7 +213,8 @@ class SoundcloudSource implements MusicSource {
       }
       return out.take(limit).toList();
     } catch (e) {
-      Diagnostics.instance.warn('sc.albumTracks', '$albumId: $e');
+      Diagnostics.instance
+          .warn('sc.albumTracks', '$albumId: ${describeNetError(e)}');
       return const [];
     }
   }
@@ -274,7 +279,8 @@ class SoundcloudSource implements MusicSource {
       return list?.cast<Map>() ?? const [];
     } catch (e) {
       Diagnostics.instance
-          .warn('sc.resolve', '$id: не удалось добрать transcodings: $e');
+          .warn('sc.resolve',
+              '$id: не удалось добрать transcodings: ${describeNetError(e)}');
       return const [];
     }
   }
@@ -441,7 +447,8 @@ class SoundcloudSource implements MusicSource {
         followers: (j['followers_count'] as num?)?.toInt(),
       );
     } catch (e) {
-      Diagnostics.instance.warn('sc.artistProfile', '$userId: $e');
+      Diagnostics.instance
+          .warn('sc.artistProfile', '$userId: ${describeNetError(e)}');
       return null;
     }
   }

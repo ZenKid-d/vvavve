@@ -6,6 +6,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import 'yt_download.dart';
 import '../../core/diagnostics.dart';
+import '../../core/net/net_errors.dart';
 import '../../domain/constants.dart';
 import '../../domain/models/album_result.dart';
 import '../../domain/models/artist_profile.dart';
@@ -86,15 +87,17 @@ class YoutubeMusicSource implements MusicSource {
       if (music.isNotEmpty) return music;
     } catch (e) {
       Diagnostics.instance
-          .info('yt.search', 'InnerTube fell back to plain search: $e');
+          .info('yt.search',
+              'InnerTube fell back to plain search: ${describeNetError(e)}');
     }
     try {
       final results = await _yt.search.search(query);
       return _onlyMusic(results).take(limit).toList();
     } catch (e) {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
-      Diagnostics.instance.warn('yt.search', '«$query»: $e');
-      throw SourceException(type, 'не удалось выполнить поиск ($e)');
+      final why = describeNetError(e);
+      Diagnostics.instance.warn('yt.search', '«$query»: $why');
+      throw SourceException(type, 'не удалось выполнить поиск ($why)');
     }
   }
 
@@ -270,7 +273,8 @@ class YoutubeMusicSource implements MusicSource {
     } catch (e) {
       // Сетевой сбой альбомного поиска не должен ронять весь поиск —
       // молча деградируем до пустого списка (треки при этом ищутся отдельно).
-      Diagnostics.instance.warn('yt.searchAlbums', '«$query»: $e');
+      Diagnostics.instance
+          .warn('yt.searchAlbums', '«$query»: ${describeNetError(e)}');
       return const [];
     }
   }
@@ -411,7 +415,8 @@ class YoutubeMusicSource implements MusicSource {
       walk(resp.data);
       return out;
     } catch (e) {
-      Diagnostics.instance.warn('yt.albumTracks', '$browseId: $e');
+      Diagnostics.instance
+          .warn('yt.albumTracks', '$browseId: ${describeNetError(e)}');
       return const [];
     }
   }
@@ -525,7 +530,8 @@ class YoutubeMusicSource implements MusicSource {
         followers: header?.subscribers,
       );
     } catch (e) {
-      Diagnostics.instance.warn('yt.artistProfile', '$artistName: $e');
+      Diagnostics.instance
+          .warn('yt.artistProfile', '$artistName: ${describeNetError(e)}');
       return null;
     }
   }
@@ -837,9 +843,10 @@ class YoutubeMusicSource implements MusicSource {
         expiresAt: DateTime.now().add(defaultStreamExpiry),
       );
     } catch (e) {
+      final why = describeNetError(e);
       Diagnostics.instance
-          .error('yt.resolve', '${track.id} «${track.title}»: $e');
-      throw SourceException(type, 'поток недоступен ($e)');
+          .error('yt.resolve', '${track.id} «${track.title}»: $why');
+      throw SourceException(type, 'поток недоступен ($why)');
     }
   }
 
@@ -1013,8 +1020,9 @@ class YoutubeMusicSource implements MusicSource {
       final v = await _yt.videos.get(videoId);
       return _videoToTrack(v);
     } catch (e) {
-      Diagnostics.instance.warn('yt.resolveVideo', '$videoId: $e');
-      throw SourceException(type, 'видео недоступно ($e)');
+      final why = describeNetError(e);
+      Diagnostics.instance.warn('yt.resolveVideo', '$videoId: $why');
+      throw SourceException(type, 'видео недоступно ($why)');
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
+import '../../core/net/net_errors.dart';
 import '../../domain/constants.dart';
 import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
@@ -89,7 +90,8 @@ class VkSource implements MusicSource {
 
   /// Внятное описание сбоя для диагностики. VK часто возвращает причину в ТЕЛЕ
   /// ответа даже при HTTP-ошибке (400/403), а generic-текст Dio её прячет —
-  /// вытаскиваем `error_msg`/`error_code`, иначе показываем статус и тело.
+  /// вытаскиваем `error_msg`/`error_code`, иначе — общий разбор
+  /// ([describeNetError]: статус + суть одной строкой).
   static String _describe(Object e) {
     if (e is DioException) {
       final data = e.response?.data;
@@ -103,14 +105,8 @@ class VkSource implements MusicSource {
         final err = body['error'] as Map;
         return 'VK ${err['error_code']}: ${err['error_msg'] ?? 'ошибка'}';
       }
-      final code = e.response?.statusCode;
-      if (code != null) {
-        final b = (body ?? e.message)?.toString() ?? '';
-        return 'HTTP $code: ${b.length > 200 ? '${b.substring(0, 200)}…' : b}';
-      }
-      return e.message ?? e.type.name;
     }
-    return '$e';
+    return describeNetError(e);
   }
 
   @override

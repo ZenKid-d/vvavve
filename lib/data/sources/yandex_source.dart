@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../core/diagnostics.dart';
+import '../../core/net/net_errors.dart';
 import '../../domain/constants.dart';
 import '../../domain/models/artist_profile.dart';
 import '../../domain/models/playable_stream.dart';
@@ -105,7 +106,7 @@ class YandexSource implements MusicSource {
     }
   }
 
-  /// Внятное сообщение для сбоев импорта плейлистов. 401/403 здесь почти
+  /// Внятное сообщение для сбоя любого запроса к Яндексу. 401/403 здесь почти
   /// всегда значит «токен просрочен/отозван», а не баг приложения — сырой
   /// текст DioException (как раньше без этой обёртки) этого не объясняет и
   /// выглядит как «приложение сломано», хотя токен просто нужно перевыпустить.
@@ -115,11 +116,8 @@ class YandexSource implements MusicSource {
       if (code == 401 || code == 403) {
         return 'токен недействителен или истёк — получите новый в Настройках';
       }
-      final body = e.response?.data;
-      final b = (body ?? e.message)?.toString() ?? e.type.name;
-      return 'ошибка сети (${code ?? '—'}: ${b.length > 200 ? '${b.substring(0, 200)}…' : b})';
     }
-    return '$e';
+    return describeNetError(e);
   }
 
   @override
@@ -153,8 +151,9 @@ class YandexSource implements MusicSource {
           .toList();
     } catch (e) {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
-      Diagnostics.instance.warn('ya.search', '«$query»: $e');
-      throw SourceException(type, 'ошибка поиска ($e)');
+      final why = _describeAuthError(e);
+      Diagnostics.instance.warn('ya.search', '«$query»: $why');
+      throw SourceException(type, 'ошибка поиска ($why)');
     }
   }
 
@@ -178,7 +177,7 @@ class YandexSource implements MusicSource {
       }
       return const [];
     } catch (e) {
-      Diagnostics.instance.warn('ya.feed', 'chart: $e');
+      Diagnostics.instance.warn('ya.feed', 'chart: ${_describeAuthError(e)}');
       return const [];
     }
   }
@@ -236,9 +235,10 @@ class YandexSource implements MusicSource {
     } on SourceException {
       rethrow;
     } catch (e) {
+      final why = _describeAuthError(e);
       Diagnostics.instance
-          .error('ya.resolve', '${track.id} «${track.title}»: $e');
-      throw SourceException(type, 'поток недоступен ($e)');
+          .error('ya.resolve', '${track.id} «${track.title}»: $why');
+      throw SourceException(type, 'поток недоступен ($why)');
     }
   }
 
@@ -339,7 +339,8 @@ class YandexSource implements MusicSource {
         followers: listeners,
       );
     } catch (e) {
-      Diagnostics.instance.warn('ya.artistProfile', '$artistId: $e');
+      Diagnostics.instance
+          .warn('ya.artistProfile', '$artistId: ${_describeAuthError(e)}');
       return null;
     }
   }
@@ -353,7 +354,8 @@ class YandexSource implements MusicSource {
           options: _opts);
       return albumTracksFromResult(r.data['result']).take(limit).toList();
     } catch (e) {
-      Diagnostics.instance.warn('ya.album', '$albumId: $e');
+      Diagnostics.instance
+          .warn('ya.album', '$albumId: ${_describeAuthError(e)}');
       return const [];
     }
   }
