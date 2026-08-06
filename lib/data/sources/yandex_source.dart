@@ -153,7 +153,7 @@ class YandexSource implements MusicSource {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
       final why = _describeAuthError(e);
       Diagnostics.instance.warn('ya.search', '«$query»: $why');
-      throw SourceException(type, 'ошибка поиска ($why)');
+      throw SourceException(type, 'ошибка поиска — $why');
     }
   }
 
@@ -238,7 +238,7 @@ class YandexSource implements MusicSource {
       final why = _describeAuthError(e);
       Diagnostics.instance
           .error('ya.resolve', '${track.id} «${track.title}»: $why');
-      throw SourceException(type, 'поток недоступен ($why)');
+      throw SourceException(type, 'поток недоступен — $why');
     }
   }
 

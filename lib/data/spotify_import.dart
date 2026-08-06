@@ -37,7 +37,7 @@ class SpotifyImportService {
       html = r.data ?? '';
     } catch (e) {
       throw SpotifyImportException(
-          'Не удалось открыть страницу Spotify (${describeNetError(e)}).');
+          'Не удалось открыть страницу Spotify — ${describeNetError(e)}');
     }
     return parseEmbed(html);
   }

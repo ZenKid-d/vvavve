@@ -698,8 +698,9 @@ class _SoundcloudClientIdState extends ConsumerState<_SoundcloudClientId> {
         Expanded(
           child: Text(
             _status ??
-                'client_id определяется автоматически. Если SoundCloud '
-                    'перестал играть — обновите его.',
+                'client_id определяется автоматически и сам перевыпускается, '
+                    'когда SoundCloud его отзывает (401). Кнопка — на случай, '
+                    'если это не помогло.',
             style: TextStyle(fontSize: 11.5, color: AppColors.white45),
           ),
         ),

@@ -149,8 +149,15 @@ final youtubeSourceProvider = Provider<YoutubeMusicSource>(
 
 final soundcloudSourceProvider = Provider<SoundcloudSource>((ref) {
   final prefs = ref.read(prefsProvider);
-  return SoundcloudSource(ref.read(dioProvider),
+  final src = SoundcloudSource(ref.read(dioProvider),
       cachedClientId: prefs.getString('sc_client_id'));
+  // client_id, перевыпущенный автоматически после 401, сохраняем на диск —
+  // иначе следующий запуск снова стартовал бы с отозванного из prefs и тратил
+  // лишний круг «запрос → 401 → перевыпуск» на каждый холодный старт.
+  src.onClientIdRefreshed = (id) {
+    prefs.setString('sc_client_id', id);
+  };
+  return src;
 });
 
 final yandexSourceProvider =

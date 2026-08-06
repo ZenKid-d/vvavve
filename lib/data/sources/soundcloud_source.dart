@@ -79,6 +79,7 @@ class SoundcloudSource implements MusicSource {
       RegExp(r'client_id=([A-Za-z0-9]{20,})'),
     ];
     for (final url in scripts.reversed) {
+      String? found;
       try {
         final js = await _dio.get<String>(url,
             options: Options(
@@ -88,11 +89,19 @@ class SoundcloudSource implements MusicSource {
         for (final p in patterns) {
           final m = p.firstMatch(body);
           if (m != null) {
-            _clientId = m.group(1);
-            return _clientId!;
+            found = m.group(1);
+            break;
           }
         }
       } catch (_) {/* пробуем следующий скрипт */}
+      // Найденный id отдаём ЗА пределами try: иначе сбой в обработчике
+      // [onClientIdRefreshed] выглядел бы как «в этом скрипте id нет», и мы
+      // молча пошли бы искать дальше.
+      if (found != null) {
+        _clientId = found;
+        onClientIdRefreshed?.call(found);
+        return found;
+      }
     }
     Diagnostics.instance
         .error('sc.clientId', 'не найден client_id в ${scripts.length} скриптах');
@@ -103,21 +112,70 @@ class SoundcloudSource implements MusicSource {
     if (_clientId == null) await refreshClientId();
   }
 
+  /// Перевыпуск client_id, дедуплицированный между параллельными запросами:
+  /// поиск идёт сразу по нескольким эндпоинтам, и без этого один протухший id
+  /// вызвал бы столько же скачиваний страницы /discover, сколько запросов.
+  /// [staleId] — id, с которым запрос получил 401: если текущий уже другой,
+  /// значит сосед успел перевыпустить, и в сеть идти незачем.
+  Future<String> _renewClientId(String? staleId) {
+    final now = _clientId;
+    if (now != null && now != staleId) return Future.value(now);
+    return _refreshing ??=
+        refreshClientId().whenComplete(() => _refreshing = null);
+  }
+
+  Future<String>? _refreshing;
+
+  /// GET к api-v2 с автоперевыпуском протухшего client_id.
+  ///
+  /// Публичный client_id SoundCloud периодически отзывают, а мы держим его в
+  /// prefs между запусками. С момента отзыва КАЖДЫЙ запрос отвечал 401, и
+  /// единственной починкой была кнопка «обновить client_id» в Настройках —
+  /// до неё пользователь видел только «Ошибка поиска» на пустом экране.
+  /// Теперь 401 сам приводит к перевыпуску id и повтору запроса; наружу
+  /// ошибка уходит, только если и повтор не удался.
+  ///
+  /// Только 401 и только здесь: 403 у SoundCloud — это гео-блок или Go+, а
+  /// 401 с URL транскодинга (см. [resolveStream]) означает пейволл, а не
+  /// протухший ключ, поэтому те запросы идут мимо этой обёртки.
+  Future<Response<dynamic>> _apiGet(String path,
+      [Map<String, dynamic> query = const {}]) async {
+    await _ensureClientId();
+    Future<Response<dynamic>> send() => _dio.get(
+          '$_apiBase$path',
+          queryParameters: {...query, 'client_id': _clientId},
+          options: Options(headers: _authHeaders),
+        );
+    try {
+      return await send();
+    } on DioException catch (e) {
+      if (e.response?.statusCode != 401) rethrow;
+      final stale = _clientId;
+      final fresh = await _renewClientId(stale);
+      if (fresh == stale) rethrow; // перевыпуск отдал тот же id — 401 не про него
+      Diagnostics.instance
+          .warn('sc.clientId', 'протух (401 на $path) — перевыпущен, повтор');
+      return await send();
+    }
+  }
+
+  /// Вызывается каждый раз, когда [refreshClientId] добыл новый client_id —
+  /// чтобы хозяин источника сохранил его (иначе перевыпущенный автоматически
+  /// id жил бы до конца сессии, и каждый холодный старт снова тратил круг
+  /// «запрос → 401 → перевыпуск»). См. `soundcloudSourceProvider`.
+  void Function(String clientId)? onClientIdRefreshed;
+
   @override
   bool get supportsPaging => true;
 
   @override
   Future<List<Track>> search(String query, {int limit = 20, int page = 0}) async {
-    await _ensureClientId();
     try {
-      final r = await _dio.get('$_apiBase/search/tracks',
-          queryParameters: {
-            'q': query,
-            'client_id': _clientId,
-            'limit': limit,
-            if (page > 0) 'offset': page * limit,
-          },
-          options: Options(headers: _authHeaders));
+      final r = await _apiGet('/search/tracks', {
+        'q': query,
+        'limit': limit,
+        if (page > 0) 'offset': page * limit,
+      });
       final list = (r.data['collection'] as List? ?? []);
       return list
           .whereType<Map>()
@@ -129,7 +187,7 @@ class SoundcloudSource implements MusicSource {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
       final why = describeNetError(e);
       Diagnostics.instance.warn('sc.search', '«$query»: $why');
-      throw SourceException(type, 'ошибка поиска ($why)');
+      throw SourceException(type, 'ошибка поиска — $why');
     }
   }
 
@@ -138,14 +196,8 @@ class SoundcloudSource implements MusicSource {
   /// пустой список, треки при этом ищутся отдельным запросом.
   Future<List<AlbumResult>> searchAlbums(String query, {int limit = 10}) async {
     try {
-      await _ensureClientId();
-      final r = await _dio.get('$_apiBase/search/albums',
-          queryParameters: {
-            'q': query,
-            'client_id': _clientId,
-            'limit': limit,
-          },
-          options: Options(headers: _authHeaders));
+      final r =
+          await _apiGet('/search/albums', {'q': query, 'limit': limit});
       final list = (r.data['collection'] as List? ?? []);
       return list
           .whereType<Map>()
@@ -165,11 +217,8 @@ class SoundcloudSource implements MusicSource {
   /// догружать батчем через `/tracks?ids=...`, иначе [toTrack] отбросит их
   /// как невалидные.
   Future<List<Track>> albumTracks(String albumId, {int limit = 200}) async {
-    await _ensureClientId();
     try {
-      final r = await _dio.get('$_apiBase/playlists/$albumId',
-          queryParameters: {'client_id': _clientId},
-          options: Options(headers: _authHeaders));
+      final r = await _apiGet('/playlists/$albumId');
       final raw = ((r.data as Map)['tracks'] as List? ?? [])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
@@ -188,9 +237,7 @@ class SoundcloudSource implements MusicSource {
       for (var i = 0; i < stubIds.length; i += 50) {
         final batch = stubIds.skip(i).take(50).join(',');
         try {
-          final hr = await _dio.get('$_apiBase/tracks',
-              queryParameters: {'ids': batch, 'client_id': _clientId},
-              options: Options(headers: _authHeaders));
+          final hr = await _apiGet('/tracks', {'ids': batch});
           for (final e in (hr.data as List? ?? [])) {
             if (e is Map) {
               final m = e.cast<String, dynamic>();
@@ -221,17 +268,13 @@ class SoundcloudSource implements MusicSource {
 
   @override
   Future<List<Track>> feed({int limit = 20}) async {
-    await _ensureClientId();
     // «Лента» — популярное в основных жанрах за неделю.
     try {
-      final r = await _dio.get('$_apiBase/charts',
-          queryParameters: {
-            'kind': 'top',
-            'genre': 'soundcloud:genres:all-music',
-            'client_id': _clientId,
-            'limit': limit,
-          },
-          options: Options(headers: _authHeaders));
+      final r = await _apiGet('/charts', {
+        'kind': 'top',
+        'genre': 'soundcloud:genres:all-music',
+        'limit': limit,
+      });
       final list = (r.data['collection'] as List? ?? []);
       return list
           .map((e) => (e as Map)['track'])
@@ -248,11 +291,8 @@ class SoundcloudSource implements MusicSource {
 
   /// Похожие/связанные треки (для рекомендаций и радио).
   Future<List<Track>> related(String trackId, {int limit = 20}) async {
-    await _ensureClientId();
     try {
-      final r = await _dio.get('$_apiBase/tracks/$trackId/related',
-          queryParameters: {'client_id': _clientId, 'limit': limit},
-          options: Options(headers: _authHeaders));
+      final r = await _apiGet('/tracks/$trackId/related', {'limit': limit});
       final list = (r.data['collection'] as List? ?? []);
       return list
           .whereType<Map>()
@@ -271,9 +311,7 @@ class SoundcloudSource implements MusicSource {
   /// признак недоступности.
   Future<List<Map>> _fetchTranscodings(String id) async {
     try {
-      final r = await _dio.get('$_apiBase/tracks/$id',
-          queryParameters: {'client_id': _clientId},
-          options: Options(headers: _authHeaders));
+      final r = await _apiGet('/tracks/$id');
       final media = (r.data as Map)['media'];
       final list = (media is Map ? media['transcodings'] : null) as List?;
       return list?.cast<Map>() ?? const [];
@@ -425,11 +463,8 @@ class SoundcloudSource implements MusicSource {
   Future<ArtistProfile?> artistProfile(Track seed) async {
     final userId = seed.extra['scUserId'];
     if (userId == null) return null;
-    await _ensureClientId();
     try {
-      final r = await _dio.get('$_apiBase/users/$userId',
-          queryParameters: {'client_id': _clientId},
-          options: Options(headers: _authHeaders));
+      final r = await _apiGet('/users/$userId');
       final j = (r.data as Map).cast<String, dynamic>();
       final visuals = (j['visuals'] as Map?)?['visuals'] as List?;
       String? banner;

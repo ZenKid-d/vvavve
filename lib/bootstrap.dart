@@ -120,6 +120,12 @@ Future<void> bootstrapApp(PlatformCaps caps) async {
       ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
   final soundcloud =
       SoundcloudSource(dio, cachedClientId: prefs.getString('sc_client_id'));
+  // client_id, перевыпущенный автоматически после 401, сохраняем на диск —
+  // иначе следующий холодный старт снова взял бы из prefs отозванный и потратил
+  // круг «запрос → 401 → перевыпуск».
+  soundcloud.onClientIdRefreshed = (id) {
+    prefs.setString('sc_client_id', id);
+  };
   final yandex = YandexSource(dio);
   final vk = VkSource(dio);
   // В браузере ссылку на поток подменяет прокси: тег <audio> не умеет слать

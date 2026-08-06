@@ -134,7 +134,7 @@ class VkSource implements MusicSource {
     } catch (e) {
       final why = _describe(e);
       Diagnostics.instance.error('vk.search', '«$query»: $why');
-      throw SourceException(type, 'ошибка поиска ($why)');
+      throw SourceException(type, 'ошибка поиска — $why');
     }
   }
 

@@ -97,7 +97,7 @@ class YoutubeMusicSource implements MusicSource {
       // Сетевой сбой источника не фатален — агрегатор деградирует мягко.
       final why = describeNetError(e);
       Diagnostics.instance.warn('yt.search', '«$query»: $why');
-      throw SourceException(type, 'не удалось выполнить поиск ($why)');
+      throw SourceException(type, 'не удалось выполнить поиск — $why');
     }
   }
 
@@ -846,7 +846,7 @@ class YoutubeMusicSource implements MusicSource {
       final why = describeNetError(e);
       Diagnostics.instance
           .error('yt.resolve', '${track.id} «${track.title}»: $why');
-      throw SourceException(type, 'поток недоступен ($why)');
+      throw SourceException(type, 'поток недоступен — $why');
     }
   }
 
@@ -1022,7 +1022,7 @@ class YoutubeMusicSource implements MusicSource {
     } catch (e) {
       final why = describeNetError(e);
       Diagnostics.instance.warn('yt.resolveVideo', '$videoId: $why');
-      throw SourceException(type, 'видео недоступно ($why)');
+      throw SourceException(type, 'видео недоступно — $why');
     }
   }
 
