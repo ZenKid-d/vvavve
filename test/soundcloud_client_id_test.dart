@@ -12,8 +12,12 @@ import 'package:roundds/domain/music_source.dart';
 /// «обновить client_id» в Настройках. Здесь проверяется автоматический путь:
 /// 401 → перевыпуск id → повтор запроса. Сети нет — подменён адаптер Dio.
 void main() {
-  const staleId = 'STALE_CLIENT_ID_0000';
-  const freshId = 'FRESH_CLIENT_ID_1111';
+  // Настоящие client_id SoundCloud — 32 буквенно-цифровых символа, и код ищет
+  // их именно так ([A-Za-z0-9]{20,}). Подчёркивания в фикстуре ломали разбор:
+  // страница скачивалась, id в ней «не находился», и проверка падала на
+  // «не удалось получить client_id» — не потому, что перевыпуск не работает.
+  const staleId = 'STALEclientID00000000000000';
+  const freshId = 'FRESHclientID11111111111111';
 
   const discover = 'soundcloud.com/discover';
   const scriptUrl = 'https://a-v2.sndcdn.com/assets/app-1.js';
