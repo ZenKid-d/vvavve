@@ -3,16 +3,10 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 
-export 'share_file_web.dart' if (dart.library.io) 'share_file_io.dart';
-
-import 'share_file_web.dart' if (dart.library.io) 'share_file_io.dart';
+import 'share_file.dart';
 
 /// Просит пользователя выбрать JSON-файл и возвращает его содержимое.
 /// null — пользователь отменил выбор.
-///
-/// Платформенного разделения не требует: `PlatformFile.readAsBytes()` сам берёт
-/// байты там, где они уже есть (web), и читает файл по пути на мобильном.
-/// Именно поэтому здесь нет `File(path)` — на вебе пути у файла нет вообще.
 Future<String?> pickJsonText() async {
   final file = await FilePicker.pickFile(
       type: FileType.custom, allowedExtensions: ['json']);

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -67,9 +66,9 @@ class _PlayerVisualizerState extends ConsumerState<PlayerVisualizer>
   }
 
   void _apply() {
-    // Реальный спектр снимает нативный Visualizer через MethodChannel — в
-    // браузере его нет, остаётся декоративная волна.
-    if (!kIsWeb && _enabled && widget.playing) {
+    // Реальный спектр снимает нативный Visualizer через MethodChannel;
+    // если он выключен или на паузе — остаётся декоративная волна.
+    if (_enabled && widget.playing) {
       _ensureStarted();
     } else {
       _stopReal();

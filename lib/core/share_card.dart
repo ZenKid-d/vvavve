@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screenshot/screenshot.dart';
 
-import 'io/file_io.dart';
+import 'io/share_file.dart';
 import 'providers.dart';
 import 'theme/accent_provider.dart';
 import 'widgets/wordmark.dart';

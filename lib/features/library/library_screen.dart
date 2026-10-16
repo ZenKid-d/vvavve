@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -44,10 +43,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int _tab = 0; // 0 плейлисты, 1 любимое, 2 загрузки, 3 очередь
   static const _titles = ['Плейлисты', 'Любимое', 'Загрузки', 'Очередь'];
 
-  /// В браузере скачивать некуда — вкладку прячем. Индекс оставляем прежним,
-  /// чтобы не разъезжались остальные вкладки и сохранённые состояния.
-  static const _downloadsTab = 2;
-  bool _tabVisible(int i) => !kIsWeb || i != _downloadsTab;
   final _search = TextEditingController();
 
   @override
@@ -76,8 +71,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      for (var i = 0; i < _titles.length; i++)
-                        if (_tabVisible(i)) ...[
+                      for (var i = 0; i < _titles.length; i++) ...[
                           _Toggle(
                               label: _titles[i],
                               active: _tab == i,

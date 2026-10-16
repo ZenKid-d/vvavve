@@ -1,7 +1,6 @@
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -77,7 +76,6 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   /// микрофон, всплывший при открытии текста песни, выглядел бы как минимум
   /// странно. Не сложилось — фон пульсирует по строкам, и это не хуже.
   Future<void> _maybeUseSpectrum() async {
-    if (kIsWeb) return; // нативного анализа в браузере нет
     if (!(ref.read(prefsProvider).getBool('real_visualizer') ?? false)) return;
     if (!await Permission.microphone.isGranted) return;
 

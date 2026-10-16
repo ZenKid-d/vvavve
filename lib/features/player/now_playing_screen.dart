@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -530,10 +529,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 _speedSheet(context, ref);
               },
             ),
-            // Эквалайзер — андроидный аудиоэффект (AndroidEqualizer поверх
-            // just_audio); в браузере такого API нет.
-            if (!kIsWeb)
-              ListTile(
+            // Эквалайзер — андроидный аудиоэффект (AndroidEqualizer поверх just_audio).
+            ListTile(
                 leading: const Icon(Icons.equalizer),
                 title: const Text('Эквалайзер'),
                 onTap: () {

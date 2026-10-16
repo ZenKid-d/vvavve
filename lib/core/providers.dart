@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // riverpod 3 вынес ChangeNotifierProvider/StateProvider в legacy-модуль
 // (курс на Notifier/AsyncNotifier) — полная миграция на новый API отдельной
@@ -22,7 +21,6 @@ import '../sync/firestore_transport.dart';
 import '../sync/sync_service.dart';
 import 'auth/auth_service.dart';
 import 'diagnostics.dart';
-import 'net/bff_interceptor.dart';
 import 'net/doh_http.dart';
 import 'net/doh_resolver.dart';
 import '../data/google_yt_import.dart';
@@ -89,7 +87,6 @@ bool _isTransient(DioException e) {
 Dio buildAppDio({
   DohResolver? doh,
   String? proxy,
-  Future<String?> Function()? bffIdToken,
 }) {
   final dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
@@ -100,17 +97,7 @@ Dio buildAppDio({
     },
   ));
   if (doh != null || (proxy ?? '').trim().isNotEmpty) {
-    // На вебе адаптера обхода нет (см. doh_http_web.dart) — оставляем тот,
-    // что dio выбрал сам.
-    final adapter = buildDohDioAdapter(doh, proxy: proxy);
-    if (adapter != null) dio.httpClientAdapter = adapter;
-  }
-
-  // Веб: все запросы к источникам переписываются на собственный прокси. Ставим
-  // до перехватчика повторов, чтобы повтор уходил уже по переписанному адресу.
-  // На Android этот перехватчик не устанавливается вовсе.
-  if (bffIdToken != null) {
-    dio.interceptors.add(BffInterceptor(bffIdToken));
+    dio.httpClientAdapter = buildDohDioAdapter(doh, proxy: proxy)!;
   }
 
   // Автоповтор транзиентных обрывов. Только идемпотентные GET; статусные ошибки
@@ -301,7 +288,7 @@ final syncServiceProvider = ChangeNotifierProvider<SyncService>((ref) {
     session: HandlerSessionHost(ref.read(audioHandlerProvider)),
     dislikes: ref.read(recsStoreProvider),
     deviceId: DeviceId.ensure(prefs),
-    deviceLabel: kIsWeb ? 'браузер' : 'телефон',
+    deviceLabel: 'телефон',
   );
   ref.onDispose(service.dispose);
   return service;
