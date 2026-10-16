@@ -1,35 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
+import '../../core/routing/app_router.dart';
 import '../../core/update_flow.dart';
-import '../../core/widgets/mini_player.dart';
-import '../../core/widgets/wordmark.dart';
-import '../../sync/sync_service.dart' show SyncService;
+import '../../core/widgets/app_header.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/skin.dart';
+import '../../design/skin_registry.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
-import '../drawer/app_drawer.dart';
-import '../home/home_screen.dart';
-import '../library/library_screen.dart';
+import '../../playback/playback_controller.dart';
+import '../../sync/sync_service.dart' show SyncService;
 import '../onboarding/onboarding_screen.dart';
-import '../search/search_screen.dart';
-import '../settings/settings_screen.dart';
+import 'mini_player_shell.dart';
 
-/// Разделы приложения (переключаются из бокового меню).
-enum AppSection { home, search, library, settings }
+/// Текущий раздел оболочки.
+///
+/// В провайдере, а не в поле состояния виджета, по двум причинам. Первая и
+/// главная: оболочка целиком перестраивается при смене скина, и состояние,
+/// лежащее в поле [State], при такой пересборке обнулилось бы — пользователь
+/// возвращался бы на «Главную» каждый раз, как меняет оформление. Вторая:
+/// раздел должен пережить переход в полноэкранный плеер (он лежит поверх
+/// оболочки отдельным маршрутом) и возврат обратно.
+class ShellSectionController extends Notifier<SkinSection> {
+  @override
+  SkinSection build() => SkinSection.values.first;
 
-extension AppSectionX on AppSection {
-  String get title => switch (this) {
-        AppSection.home => 'vvavve',
-        AppSection.search => 'Поиск',
-        AppSection.library => 'Медиатека',
-        AppSection.settings => 'Настройки',
-      };
+  /// Переключение по индексу — индекс приходит из каркаса скина (панель iOS,
+  /// шевроны iPod). Выход за границы игнорируем: скины считают разделы по
+  /// [SkinSection.values], но лишний тап не должен ронять экран.
+  void select(int index) {
+    if (index < 0 || index >= SkinSection.values.length) return;
+    state = SkinSection.values[index];
+  }
 }
 
-/// Главная оболочка: Scaffold с боковым меню (Drawer), переключаемым телом
-/// и закреплённым мини-плеером снизу.
+final shellSectionProvider =
+    NotifierProvider<ShellSectionController, SkinSection>(
+        ShellSectionController.new);
+
+/// Главная оболочка: каркас скина, переключаемый раздел, баннер обновления и
+/// мини-плеер.
+///
+/// Оболочка ничего не знает об устройстве скина: что именно переключает
+/// разделы (нижняя панель или меню с шевронами), рисует [Skin.buildShell], а
+/// какой экран показывать — [Skin.buildSection]. Поэтому добавление третьего
+/// скина не трогает этот файл вовсе.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -38,7 +56,10 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  AppSection _section = AppSection.home;
+  /// Плеер вне оболочки живёт дольше неё, поэтому ссылку на него держим в поле:
+  /// в [dispose] уже нельзя читать провайдеры (Riverpod запрещает `ref` после
+  /// размонтирования).
+  late final PlaybackController _playback;
 
   @override
   void initState() {
@@ -51,9 +72,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
     // SC Go+: предложить сыграть с другого источника вместо молчаливой
     // подмены. HomeShell — единственный постоянно смонтированный Scaffold
-    // (NowPlayingScreen лежит поверх него как отдельный route), поэтому
+    // (полноэкранный плеер лежит поверх него как отдельный route), поэтому
     // снекбар всегда есть куда показать, на каком бы экране ни был пользователь.
-    ref.read(playbackProvider).onGoPlusOffer = _showGoPlusOffer;
+    _playback = ref.read(playbackProvider);
+    _playback.onGoPlusOffer = _showGoPlusOffer;
+  }
+
+  @override
+  void dispose() {
+    // Колбэк переживает оболочку и указывал бы на снятый State: предложение
+    // Go+ может прийти, когда оболочки уже нет.
+    _playback.onGoPlusOffer = null;
+    super.dispose();
   }
 
   void _showGoPlusOffer(Track native, Track offer) {
@@ -65,7 +95,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           'SoundCloud Go+'),
       action: SnackBarAction(
         label: 'Играть с ${offer.source.label}',
-        onPressed: () => ref.read(playbackProvider).acceptGoPlusOffer(),
+        onPressed: () => _playback.acceptGoPlusOffer(),
       ),
       duration: const Duration(seconds: 10),
     ));
@@ -85,11 +115,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       fullscreenDialog: true,
       builder: (_) => const OnboardingScreen(),
     ));
-  }
-
-  void _select(AppSection s) {
-    setState(() => _section = s);
-    Navigator.of(context).pop(); // закрыть Drawer
   }
 
   /// Сессия с другого устройства: предлагаем продолжить, но не подменяем
@@ -124,57 +149,103 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   Widget build(BuildContext context) {
     _watchPendingSession();
-    return Scaffold(
-      drawer: AppDrawer(current: _section, onSelect: _select),
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            _TopBar(
-              title: _section == AppSection.home
-                  ? const Wordmark(fontSize: 17)
-                  : Text(_section.title,
-                      style: const TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w600)),
-              showSearch: _section != AppSection.search,
-              onSearch: () => setState(() => _section = AppSection.search),
-            ),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position: Tween(
-                            begin: const Offset(0, 0.02), end: Offset.zero)
-                        .animate(anim),
-                    child: child,
+    // Один watch на скин: смена темы перестраивает оболочку целиком, и два
+    // watch'а (skinProvider + currentSkinProvider) заставили бы дерево
+    // пересобираться в два прохода.
+    final skin = ref.watch(currentSkinProvider);
+    final section = ref.watch(shellSectionProvider);
+    final tokens = skin.tokens;
+
+    // SkinScope ставим здесь, а не только в app.dart: оболочка — корень
+    // приложения для своих экранов, и её нельзя ставить в зависимость от того,
+    // обернули ли её кто-то снаружи. Вложенные scope'ы не конфликтуют: верхний
+    // отдаёт тот же скин.
+    return SkinScope(
+      skin: skin,
+      child: Builder(builder: (context) {
+        return skin.buildShell(
+          context,
+          Column(
+            children: [
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: tokens.motionDuration,
+                  switchInCurve: tokens.motionCurve,
+                  switchOutCurve: tokens.motionCurve,
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      // Небольшой сдвиг снизу: раздел «выезжает» из-под шапки,
+                      // как в системной навигации. Сдвиг крошечный — крупный
+                      // сдвиг читался бы как «экран уехал».
+                      position: Tween(
+                        begin: const Offset(0, 0.03),
+                        end: Offset.zero,
+                      ).animate(anim),
+                      child: child,
+                    ),
+                  ),
+                  child: KeyedSubtree(
+                    key: ValueKey(section),
+                    child: skin.buildSection(context, section),
                   ),
                 ),
-                child: KeyedSubtree(
-                  key: ValueKey(_section),
-                  child: _body(),
-                ),
               ),
-            ),
-            const _UpdateBanner(),
-            const MiniPlayer(),
-          ],
-        ),
-      ),
+              const _UpdateBanner(),
+              const ShellMiniPlayer(),
+            ],
+          ),
+          sectionIndex: section.index,
+          onSection: (i) =>
+              ref.read(shellSectionProvider.notifier).select(i),
+          onSettings: () => context.push(Routes.settings),
+        );
+      }),
     );
   }
+}
 
-  Widget _body() => switch (_section) {
-        AppSection.home => const HomeScreen(),
-        AppSection.search => const SearchScreen(),
-        AppSection.library => const LibraryScreen(),
-        AppSection.settings => const SettingsScreen(),
-      };
+/// Экран настроек: собирается скином, как и разделы.
+///
+/// Отдельный маршрут, а не раздел оболочки: настройки в iOS открываются
+/// шестерёнкой, а в iPod — пунктом меню, и держать их «пятым разделом»
+/// значило бы заставлять панель рисовать то, чего в ней нет.
+class SkinSettingsRoute extends ConsumerWidget {
+  const SkinSettingsRoute({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final skin = ref.watch(currentSkinProvider);
+    final tokens = skin.tokens;
+    return SkinScope(
+      skin: skin,
+      child: Builder(builder: (context) {
+        return Scaffold(
+          backgroundColor: tokens.background,
+          body: Column(
+            children: [
+              AppHeader(
+                title: 'Настройки',
+                // maybePop вместо context.pop: экран должен закрываться и тогда,
+                // когда его открыли не через роутер (тест, превью).
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(child: skin.buildSettings(context)),
+              const ShellMiniPlayer(),
+            ],
+          ),
+        );
+      }),
+    );
+  }
 }
 
 /// Плавающий баннер обновления: прогресс фоновой загрузки и кнопка
 /// «Установить», когда APK скачан (установить можно в любой момент).
+///
+/// Оформлен токенами скина, а не палитрой Material-темы: баннер висит поверх
+/// любого раздела, и в iPod-меню он обязан быть частью прибора, а не
+/// плашкой из чужой системы.
 class _UpdateBanner extends ConsumerWidget {
   const _UpdateBanner();
 
@@ -182,28 +253,40 @@ class _UpdateBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ctl = ref.watch(updateControllerProvider);
     if (!ctl.bannerVisible) return const SizedBox.shrink();
-    final accent = Theme.of(context).colorScheme.primary;
+    final tokens = SkinScope.of(context).tokens;
     final version = ctl.info?.version ?? '';
 
     if (ctl.isDownloading) {
       final pct = (ctl.progress * 100).round();
       return Container(
-        color: AppColors.surface1,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        color: tokens.surface,
+        padding: EdgeInsets.fromLTRB(
+          tokens.space16,
+          tokens.space8,
+          tokens.space16,
+          tokens.space8,
+        ),
         child: Row(
           children: [
+            // Своя полоса вместо CircularProgressIndicator: кольцо на
+            // монохромном экране iPod выглядело бы как чужой элемент, а полоса
+            // читается одинаково в обоих скинах.
             SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                  value: ctl.progress == 0 ? null : ctl.progress,
-                  strokeWidth: 2,
-                  color: accent),
+              width: tokens.space24,
+              child: LinearProgressIndicator(
+                value: ctl.progress == 0 ? null : ctl.progress,
+                minHeight: tokens.space4,
+                color: tokens.accent,
+                backgroundColor: tokens.separator,
+                borderRadius: BorderRadius.circular(tokens.radiusSm),
+              ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: tokens.space12),
             Expanded(
-              child: Text('Загрузка обновления $version… $pct%',
-                  style: const TextStyle(fontSize: 12.5)),
+              child: Text(
+                'Загрузка обновления $version… $pct%',
+                style: tokens.caption.copyWith(color: tokens.textPrimary),
+              ),
             ),
           ],
         ),
@@ -212,61 +295,38 @@ class _UpdateBanner extends ConsumerWidget {
 
     // Готово к установке.
     return Container(
-      color: AppColors.surface1,
-      padding: const EdgeInsets.fromLTRB(16, 2, 4, 2),
+      color: tokens.surface,
+      padding: EdgeInsets.fromLTRB(
+        tokens.space16,
+        tokens.space2,
+        tokens.space4,
+        tokens.space2,
+      ),
       child: Row(
         children: [
-          Icon(Icons.system_update, color: accent, size: 20),
-          const SizedBox(width: 10),
+          AppIcon(AppIcons.downloadDone, size: 20, color: tokens.accent),
+          SizedBox(width: tokens.space8),
           Expanded(
-            child: Text('Обновление $version готово',
-                style: const TextStyle(
-                    fontSize: 12.5, fontWeight: FontWeight.w500)),
+            child: Text(
+              'Обновление $version готово',
+              style: tokens.caption
+                  .copyWith(color: tokens.textPrimary, fontWeight: FontWeight.w600),
+            ),
           ),
+          // Кнопки здесь — системные (Material), потому что это простой
+          // баннер поверх приложения, а не элемент оформления скина: у него
+          // нет своей геометрии ни в одном из скинов, и рисовать его вручную
+          // значило бы повторить TextButton в двух местах.
           TextButton(
             onPressed: () => ref.read(updateControllerProvider).install(),
             child: const Text('Установить'),
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 18),
+            icon: AppIcon(AppIcons.close, size: 18, color: tokens.textSecondary),
             tooltip: 'Скрыть',
             onPressed: () =>
                 ref.read(updateControllerProvider).dismissBanner(),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.title,
-    required this.showSearch,
-    required this.onSearch,
-  });
-
-  final Widget title;
-  final bool showSearch;
-  final VoidCallback onSearch;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-      child: Row(
-        children: [
-          Builder(
-            builder: (ctx) => IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => Scaffold.of(ctx).openDrawer(),
-            ),
-          ),
-          Expanded(child: Center(child: title)),
-          showSearch
-              ? IconButton(
-                  icon: const Icon(Icons.search), onPressed: onSearch)
-              : const SizedBox(width: 48),
         ],
       ),
     );

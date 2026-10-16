@@ -4,23 +4,29 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/playlist_actions.dart' show showAddToPlaylistSheet;
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/theme_settings.dart';
-import '../../core/widgets/animated_bg.dart';
-import '../../core/widgets/artwork.dart';
-import '../../core/widgets/cd_disc.dart';
-import '../../core/widgets/player_visualizer.dart';
-import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
-import '../../core/widgets/vinyl_disc.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/skin.dart';
+import '../../design/skin_registry.dart';
+import '../../design/tokens/design_tokens.dart';
+import '../../design/widgets/blocks.dart' show EmptyState;
 import '../../domain/models/track.dart';
-import '../../playback/audio_handler.dart';
+import '../../playback/audio_handler.dart' show LoopMode;
 import '../album/album_screen.dart';
 import '../artist/artist_screen.dart';
 import '../common/track_list_screen.dart';
 import 'equalizer_screen.dart';
+import 'ios_player_view.dart';
+import 'ipod_player_view.dart';
 import 'lyrics_screen.dart';
+import 'player_controls.dart';
 
+/// Экран «Сейчас играет».
+///
+/// Экран не рисует ничего сам: он собирает состояние плеера в [PlayerUi] и
+/// передаёт его одному из двух видов — iOS или iPod. Вся разница между темами
+/// живёт в вёрстке, а логика (очередь, меню, таймер сна, дизлайк, загрузка)
+/// остаётся здесь одна — иначе через месяц две версии плеера разойдутся.
 class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
 
@@ -29,7 +35,9 @@ class NowPlayingScreen extends ConsumerStatefulWidget {
 }
 
 class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
-  int _dir = 1; // направление смены пластинки: 1 — вперёд, -1 — назад
+  /// Направление смены трека: 1 — вперёд, -1 — назад. Нужно анимации подъёма
+  /// обложки в Cover Flow, чтобы она шла в ту же сторону, что и переход.
+  int _dir = 1;
 
   void _goNext() {
     setState(() => _dir = 1);
@@ -41,390 +49,163 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     ref.read(playbackProvider).previous();
   }
 
+  /// Скин берём из области скина, а если её нет (экран открыт маршрутом вне
+  /// оболочки) — из выбранного пользователем. Иначе плеер был бы единственным
+  /// экраном, который зависит от того, кто его открыл.
+  Skin _skin(WidgetRef ref) =>
+      SkinScope.maybeOf(context) ?? skinFor(ref.watch(skinProvider));
+
   @override
   Widget build(BuildContext context) {
+    final skin = _skin(ref);
+    final tokens = skin.tokens;
     final pc = ref.watch(playbackProvider);
-    final accent = Theme.of(context).colorScheme.primary;
-    final ts = ref.watch(themeSettingsProvider);
     final track = pc.current;
 
-    if (track == null) {
-      return Scaffold(
-        appBar: AppBar(),
-        body: const Center(child: Text('Ничего не играет')),
-      );
-    }
-
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          AnimatedPlayerBg(
-              accent: accent, animate: ts.animLevel != AnimLevel.min),
-          SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: Column(
-              children: [
-                _topBar(context, ref, track),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: Center(
-                    child: GestureDetector(
-                      // Жесты: свайп влево — след., вправо — пред., вниз — закрыть.
-                      onHorizontalDragEnd: (d) {
-                        final v = d.primaryVelocity ?? 0;
-                        if (v < -250) {
-                          _goNext();
-                        } else if (v > 250) {
-                          _goPrev();
-                        }
+      backgroundColor: tokens.background,
+      body: SafeArea(
+        child: GestureDetector(
+          // Жесты: свайп влево — след., вправо — пред., вниз — закрыть.
+          // Горизонталь перехватывает Cover Flow в iOS-теме — там он и есть
+          // «листание очереди», и результат тот же.
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (v < -250) {
+              _goNext();
+            } else if (v > 250) {
+              _goPrev();
+            }
+          },
+          onVerticalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0) > 300) context.pop();
+          },
+          child: Column(
+            children: [
+              _PlayerTopBar(
+                tokens: tokens,
+                onClose: () => context.pop(),
+                onMore: track == null ? null : () => _moreMenu(track),
+              ),
+              Expanded(
+                child: track == null
+                    ? EmptyState(
+                        tokens: tokens,
+                        icon: AppIcons.musicNote,
+                        title: 'Ничего не играет',
+                        subtitle: 'Выберите трек — и плеер оживёт',
+                      )
+                    : switch (skin.id) {
+                        SkinId.ios => IosPlayerView(ui: _ui(tokens, track)),
+                        SkinId.ipod => IpodPlayerView(ui: _ui(tokens, track)),
                       },
-                      onVerticalDragEnd: (d) {
-                        if ((d.primaryVelocity ?? 0) > 300) context.pop();
-                      },
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 420),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, anim) {
-                          // «Подъём иглы»: старая пластинка приподнимается и
-                          // уходит вверх, новая поднимается снизу. Без поворота.
-                          final incoming = child.key == ValueKey(track.uid);
-                          final dir = incoming ? _dir : -_dir;
-                          final slide = Tween<Offset>(
-                            begin: Offset(0, 0.5 * dir),
-                            end: Offset.zero,
-                          ).animate(anim);
-                          return FadeTransition(
-                            opacity: anim,
-                            child: SlideTransition(
-                              position: slide,
-                              child: ScaleTransition(
-                                scale:
-                                    Tween(begin: 0.92, end: 1.0).animate(anim),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                        child: KeyedSubtree(
-                          key: ValueKey(track.uid),
-                          child: switch (ts.playerView) {
-                            PlayerView.cover => _coverArt(track, accent),
-                            PlayerView.cd => CdDisc(
-                                isPlaying: pc.isPlaying && ts.spin,
-                                accent: accent,
-                                artist: track.artist,
-                                title: track.title,
-                                size: 250,
-                              ),
-                            PlayerView.vinyl => VinylDisc(
-                                artworkUrl: track.artworkUrl,
-                                isPlaying: pc.isPlaying && ts.spin,
-                                accent: accent,
-                                seed: track.uid,
-                                size: 250,
-                              ),
-                          },
-                        ),
-                      ),
-                          // Тонарм — только у винила: у CD-плеера иглы нет.
-                          if (ts.playerView == PlayerView.vinyl)
-                            Positioned.fill(
-                              child: TonearmOverlay(
-                                  playing: pc.isPlaying, accent: accent)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Text(track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 3),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ArtistScreen(artist: track.artist),
-                  )),
-                  child: Text(track.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          TextStyle(fontSize: 13, color: AppColors.white45)),
-                ),
-                if ((track.album ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => AlbumScreen(seed: track),
-                    )),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.album, size: 13, color: AppColors.white45),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(track.album!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12, color: AppColors.white45)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 11),
-                ServicePill(pc.playingVia ?? track.source,
-                    origin: pc.playingVia != null ? track.source : null),
-                if (pc.error != null) _errorBox(context, ref, track, pc.error!),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: PlayerVisualizer(
-                      playing: pc.isPlaying, color: accent, height: 26),
-                ),
-                const SizedBox(height: 8),
-                _progress(context, ref, pc.duration),
-                _controls(context, ref, pc.isPlaying, pc.isLoading),
-                const SizedBox(height: 14),
-                _tools(context, ref, track),
-                const SizedBox(height: 10),
-              ],
-            ),
+              ),
+            ],
           ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _coverArt(Track track, Color accent) {
-    return Container(
-      width: 280,
-      height: 280,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-              color: accent.withValues(alpha: 0.35),
-              blurRadius: 50,
-              spreadRadius: 2),
-        ],
-      ),
-      child: Artwork(track.artworkUrl, size: 280, radius: 24, seed: track.uid),
-    );
-  }
-
-  Widget _topBar(BuildContext context, WidgetRef ref, Track track) {
-    return Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down),
-          onPressed: () => context.pop(),
-        ),
-        const Expanded(
-          child: Text('СЕЙЧАС ИГРАЕТ',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 10.5, letterSpacing: 1.5, color: Colors.white54)),
-        ),
-        IconButton(
-            icon: const Icon(Icons.more_horiz),
-            onPressed: () => _moreMenu(context, ref, track)),
-      ],
-    );
-  }
-
-  Widget _progress(BuildContext context, WidgetRef ref, Duration dur) {
-    final max = dur.inMilliseconds.toDouble();
-    // Отдельный Consumer на позиции — тикает только он, не весь плеер.
-    return Consumer(
-      builder: (context, ref, _) {
-        final pos = ref.watch(positionProvider).value ?? Duration.zero;
-        final value =
-            pos.inMilliseconds.clamp(0, max <= 0 ? 1 : max).toDouble();
-        return Column(
-          children: [
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackShape: const RoundedRectSliderTrackShape(),
-              ),
-              child: Slider(
-                value: max > 0 ? value : 0,
-                max: max > 0 ? max : 1,
-                onChanged: (v) => ref
-                    .read(playbackProvider)
-                    .seek(Duration(milliseconds: v.toInt())),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_fmt(pos),
-                      style:
-                          TextStyle(fontSize: 10.5, color: AppColors.white45)),
-                  Text(_fmt(dur),
-                      style:
-                          TextStyle(fontSize: 10.5, color: AppColors.white45)),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _controls(
-      BuildContext context, WidgetRef ref, bool playing, bool loading) {
-    final accent = Theme.of(context).colorScheme.primary;
+  /// Собирает [PlayerUi] из состояния плеера. Отдельный метод — чтобы обе
+  /// ветки switch читались одинаково и ни одна не «забыла» поле.
+  PlayerUi _ui(DesignTokens tokens, Track track) {
     final pc = ref.read(playbackProvider);
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-              icon: Icon(Icons.shuffle,
-                  color: pc.isShuffle ? accent : AppColors.white45),
-              onPressed: pc.toggleShuffle),
-          const SizedBox(width: 10),
-          IconButton(
-              iconSize: 38,
-              icon: const Icon(Icons.skip_previous),
-              onPressed: _goPrev),
-          const SizedBox(width: 10),
-          GestureDetector(
-            onTap: pc.togglePlay,
-            child: Container(
-              width: 66,
-              height: 66,
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              child: loading
-                  ? const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.black))
-                  : Icon(playing ? Icons.pause : Icons.play_arrow,
-                      size: 34, color: Colors.black),
-            ),
-          ),
-          const SizedBox(width: 10),
-          IconButton(
-              iconSize: 38,
-              icon: const Icon(Icons.skip_next),
-              onPressed: _goNext),
-          const SizedBox(width: 10),
-          IconButton(
-              icon: Icon(
-                  pc.repeatMode == LoopMode.one
-                      ? Icons.repeat_one
-                      : Icons.repeat,
-                  color: pc.repeatMode == LoopMode.off
-                      ? AppColors.white45
-                      : accent),
-              onPressed: pc.cycleRepeat),
-        ],
-      ),
-    );
-  }
-
-  Widget _tools(BuildContext context, WidgetRef ref, Track track) {
-    final accent = Theme.of(context).colorScheme.primary;
-    final liked = ref.watch(libraryProvider).isLiked(track);
-    final disliked = ref.watch(recsStoreProvider).isDisliked(track);
+    final queue = pc.queue;
     final downloads = ref.watch(downloadsProvider);
-    final downloaded = downloads.isDownloaded(track.uid);
-    final downloading = downloads.isDownloading(track.uid);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: [
-        IconButton(
-            icon: Icon(Icons.lyrics_outlined, color: AppColors.white60),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => LyricsScreen(track: track),
-                ))),
-        IconButton(
-            icon: Icon(Icons.queue_music, color: AppColors.white60),
-            onPressed: () => _showQueue(context, ref)),
-        IconButton(
-            icon: downloading
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CircularProgressIndicator(
-                            value: downloads.progressFor(track.uid) == 0
-                                ? null
-                                : downloads.progressFor(track.uid),
-                            strokeWidth: 2,
-                            color: accent),
-                        if (downloads.progressFor(track.uid) > 0)
-                          Text(
-                              '${(downloads.progressFor(track.uid) * 100).round()}',
-                              style: TextStyle(
-                                  fontSize: 7,
-                                  height: 1,
-                                  color: accent,
-                                  fontWeight: FontWeight.w600)),
-                      ],
-                    ))
-                : Icon(
-                    downloaded
-                        ? Icons.download_done
-                        : Icons.download_outlined,
-                    color: downloaded ? accent : AppColors.white60),
-            onPressed: () {
-              if (downloaded) {
-                ref.read(downloadsProvider).remove(track.uid);
-              } else if (!downloading) {
-                ref.read(downloadsProvider).download(track);
-              }
-            }),
-        IconButton(
-            icon: Icon(Icons.add_circle_outline, color: AppColors.white60),
-            onPressed: () => showAddToPlaylistSheet(context, ref, track)),
-        IconButton(
-            icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
-                color: liked ? accent : AppColors.white60),
-            onPressed: () => ref.read(libraryProvider).toggleLike(track)),
-        IconButton(
-            tooltip: 'Не нравится',
-            icon: Icon(
-                disliked ? Icons.thumb_down : Icons.thumb_down_outlined,
-                color: disliked ? AppColors.warning : AppColors.white60),
-            onPressed: () async {
-              final wasDisliked = disliked;
-              await ref.read(recsStoreProvider).toggleDislike(track);
-              // Свежий дизлайк текущего трека — сразу проматываем дальше.
-              if (!wasDisliked &&
-                  ref.read(playbackProvider).current?.uid == track.uid) {
-                ref.read(playbackProvider).next();
-              }
-            }),
-      ],
+    final uid = track.uid;
+    return PlayerUi(
+      tokens: tokens,
+      track: track,
+      queue: queue,
+      index: queue.indexWhere((t) => t.uid == uid),
+      direction: _dir,
+      isPlaying: pc.isPlaying,
+      isLoading: pc.isLoading,
+      shuffleOn: pc.isShuffle,
+      repeatActive: pc.repeatMode != LoopMode.off,
+      repeatOne: pc.repeatMode == LoopMode.one,
+      duration: pc.duration,
+      error: pc.error,
+      liked: ref.watch(libraryProvider).isLiked(track),
+      disliked: ref.watch(recsStoreProvider).isDisliked(track),
+      downloaded: downloads.isDownloaded(uid),
+      downloading: downloads.isDownloading(uid),
+      downloadProgress:
+          downloads.isDownloading(uid) ? downloads.progressFor(uid) : null,
+      service: pc.playingVia ?? track.source,
+      originService: pc.playingVia != null ? track.source : null,
+      onClose: () => context.pop(),
+      onMore: () => _moreMenu(track),
+      onLyrics: () => _open(() => LyricsScreen(track: track)),
+      onQueue: () => _showQueue(track),
+      onDownload: () => _toggleDownload(track),
+      onAddToPlaylist: () => showAddToPlaylistSheet(context, ref, track),
+      onLike: () => ref.read(libraryProvider).toggleLike(track),
+      onDislike: () => _dislike(track),
+      onArtist: () => _open(() => ArtistScreen(artist: track.artist)),
+      onAlbum: () => _open(() => AlbumScreen(seed: track)),
+      onSelectIndex: (i) => _selectFromQueue(queue, i),
+      onTogglePlay: () => ref.read(playbackProvider).togglePlay(),
+      onPrev: _goPrev,
+      onNext: _goNext,
+      onShuffle: () => ref.read(playbackProvider).toggleShuffle(),
+      onCycleRepeat: () => ref.read(playbackProvider).cycleRepeat(),
+      onSeek: (d) => ref.read(playbackProvider).seek(d),
+      onRetry: () => ref.read(playbackProvider).retry(),
     );
   }
 
-  void _showQueue(BuildContext context, WidgetRef ref) {
+  /// Выбор трека прямо из Cover Flow: играем его с текущей очередью, чтобы
+  /// дальше листалось то, что пользователь уже собирал.
+  void _selectFromQueue(List<Track> queue, int index) {
+    if (index < 0 || index >= queue.length) return;
+    // Листание очереди — движение вперёд, даже если выбран трек левее текущего:
+    // направление здесь нужно только для анимации подъёма обложки.
+    setState(() => _dir = 1);
+    ref.read(playbackProvider).playTrack(queue[index], queue: queue);
+  }
+
+  /// Открытие экрана-ссылки. Именно push, а не `context.push`: это не
+  /// навигационный раздел приложения, а продолжение просмотра трека.
+  ///
+  /// Билдер без параметров — потому что ни один из этих экранов не зависит от
+  /// контекста роута, а тащить `BuildContext` ради пустой заглушки смысла нет.
+  void _open(Widget Function() builder) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => builder()),
+    );
+  }
+
+  void _toggleDownload(Track track) {
+    final dl = ref.read(downloadsProvider);
+    if (dl.isDownloaded(track.uid)) {
+      dl.remove(track.uid);
+    } else if (!dl.isDownloading(track.uid)) {
+      dl.download(track);
+    }
+  }
+
+  /// Свежий дизлайк текущего трека — сразу проматываем дальше: иначе человек
+  /// остаётся слушать то, что только что отверг.
+  Future<void> _dislike(Track track) async {
+    final wasDisliked = ref.read(recsStoreProvider).isDisliked(track);
+    await ref.read(recsStoreProvider).toggleDislike(track);
+    if (!wasDisliked && ref.read(playbackProvider).current?.uid == track.uid) {
+      _goNext();
+    }
+  }
+
+  void _showQueue(Track current) {
+    final tokens = _skin(ref).tokens;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface1,
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusLg),
+      ),
       isScrollControlled: true,
-      builder: (_) {
+      builder: (sheetCtx) {
         final pc = ref.read(playbackProvider);
         return DraggableScrollableSheet(
           expand: false,
@@ -432,19 +213,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           builder: (_, scroll) => ListView(
             controller: scroll,
             children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('Очередь',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              Padding(
+                padding: EdgeInsets.all(tokens.space16),
+                child: Text(
+                  'Очередь',
+                  style: tokens.title.copyWith(color: tokens.textPrimary),
+                ),
               ),
               for (final t in pc.queue)
                 TrackRow(
                   track: t,
-                  active: t.uid == pc.current?.uid,
+                  active: t.uid == current.uid,
                   onTap: () {
                     pc.playTrack(t, queue: pc.queue);
-                    Navigator.pop(context);
+                    Navigator.of(sheetCtx).pop();
                   },
                 ),
             ],
@@ -454,156 +236,146 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _errorBox(
-      BuildContext context, WidgetRef ref, Track track, String error) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.danger.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(14),
-          border:
-              Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline,
-                color: AppColors.danger, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(error,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: Colors.white70)),
-            ),
-            TextButton(
-              onPressed: () => ref.read(playbackProvider).retry(),
-              child: const Text('Повтор'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _moreMenu(BuildContext context, WidgetRef ref, Track track) {
+  /// Меню «•••»: всё, что не помещается в ряд плеера.
+  void _moreMenu(Track track) {
+    final tokens = _skin(ref).tokens;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface1,
-      builder: (_) => SafeArea(
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusLg),
+      ),
+      builder: (sheetCtx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.radio),
-              title: const Text('Радио по этому треку'),
+            _menuItem(
+              tokens: tokens,
+              icon: AppIcons.radio,
+              title: 'Радио по этому треку',
               onTap: () async {
-                Navigator.pop(context);
+                Navigator.of(sheetCtx).pop();
                 final list = await ref
                     .read(recommendationServiceProvider)
                     .radioFrom(track);
                 await ref.read(playbackProvider).startRadio(track, list);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.recommend_outlined),
-              title: const Text('Похожие треки'),
+            _menuItem(
+              tokens: tokens,
+              icon: AppIcons.sparkles,
+              title: 'Похожие треки',
               onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => TrackListScreen(
+                Navigator.of(sheetCtx).pop();
+                _open(
+                  () => TrackListScreen(
                     title: 'Похоже на «${track.title}»',
                     loader: () => ref
                         .read(recommendationServiceProvider)
                         .similarTo(track),
                   ),
-                ));
+                );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.speed),
-              title: const Text('Скорость воспроизведения'),
+            _menuItem(
+              tokens: tokens,
+              icon: AppIcons.sync,
+              title: 'Скорость воспроизведения',
               onTap: () {
-                Navigator.pop(context);
-                _speedSheet(context, ref);
+                Navigator.of(sheetCtx).pop();
+                _speedSheet();
               },
             ),
-            // Эквалайзер — андроидный аудиоэффект (AndroidEqualizer поверх just_audio).
-            ListTile(
-                leading: const Icon(Icons.equalizer),
-                title: const Text('Эквалайзер'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const EqualizerScreen()));
-                },
-              ),
-            Consumer(builder: (context, ref, _) {
-              final timer = ref.watch(sleepTimerProvider);
-              final rem = timer.remaining;
-              final afterTrack = ref.watch(playbackProvider).sleepAfterTrack;
-              final active = timer.active || afterTrack;
-              final subtitle = afterTrack
-                  ? 'До конца трека'
-                  : (rem != null ? 'Осталось ${_fmt(rem)}' : null);
-              return ListTile(
-                leading: const Icon(Icons.bedtime_outlined),
-                title: const Text('Таймер сна'),
-                subtitle: subtitle != null ? Text(subtitle) : null,
-                trailing: active
-                    ? TextButton(
-                        onPressed: () {
-                          ref.read(sleepTimerProvider).cancel();
-                          ref.read(playbackProvider)
-                            ..setSleepAfterTrack(false)
-                            ..setVolume(1);
-                        },
-                        child: const Text('Стоп'))
-                    : null,
-                onTap: () {
-                  Navigator.pop(context);
-                  _sleepSheet(context, ref);
-                },
-              );
-            }),
+            // Эквалайзер — андроидный аудиоэффект (AndroidEqualizer поверх
+            // just_audio), поэтому пункт есть только на Android.
+            _menuItem(
+              tokens: tokens,
+              icon: AppIcons.volume,
+              title: 'Эквалайзер',
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                _open(() => const EqualizerScreen());
+              },
+            ),
+            Consumer(
+              builder: (context, ref, _) {
+                final timer = ref.watch(sleepTimerProvider);
+                final rem = timer.remaining;
+                final afterTrack =
+                    ref.watch(playbackProvider).sleepAfterTrack;
+                final active = timer.active || afterTrack;
+                final subtitle = afterTrack
+                    ? 'До конца трека'
+                    : (rem != null ? 'Осталось ${formatMediaTime(rem)}' : null);
+                return _menuItem(
+                  tokens: tokens,
+                  icon: AppIcons.clock,
+                  title: 'Таймер сна',
+                  subtitle: subtitle,
+                  trailing: active
+                      ? TextButton(
+                          onPressed: () {
+                            ref.read(sleepTimerProvider).cancel();
+                            ref.read(playbackProvider)
+                              ..setSleepAfterTrack(false)
+                              ..setVolume(1);
+                          },
+                          child: Text(
+                            'Стоп',
+                            style: tokens.caption.copyWith(color: tokens.accent),
+                          ),
+                        )
+                      : null,
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    _sleepSheet();
+                  },
+                );
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  void _sleepSheet(BuildContext context, WidgetRef ref) {
+  void _sleepSheet() {
+    final tokens = _skin(ref).tokens;
     const options = {'15 минут': 15, '30 минут': 30, '45 минут': 45, '1 час': 60};
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface1,
-      builder: (_) => SafeArea(
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusLg),
+      ),
+      builder: (sheetCtx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Уснуть через',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            Padding(
+              padding: EdgeInsets.all(tokens.space16),
+              child: Text(
+                'Уснуть через',
+                style: tokens.title.copyWith(color: tokens.textPrimary),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.music_note),
-              title: const Text('До конца текущего трека'),
+            _menuItem(
+              tokens: tokens,
+              icon: AppIcons.musicNote,
+              title: 'До конца текущего трека',
               onTap: () {
                 ref.read(sleepTimerProvider).cancel();
                 ref.read(playbackProvider).setSleepAfterTrack(true);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Пауза после текущего трека')));
+                Navigator.of(sheetCtx).pop();
+                _snack('Пауза после текущего трека');
               },
             ),
             for (final e in options.entries)
-              ListTile(
-                title: Text(e.key),
-                subtitle: const Text('С плавным затуханием в конце',
-                    style: TextStyle(fontSize: 11)),
+              _menuItem(
+                tokens: tokens,
+                icon: AppIcons.clock,
+                title: e.key,
+                subtitle: 'С плавным затуханием в конце',
                 onTap: () {
                   final pc = ref.read(playbackProvider);
                   pc.setSleepAfterTrack(false);
@@ -621,9 +393,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                       pc.setVolume(v);
                     },
                   );
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Таймер сна: ${e.key}')));
+                  Navigator.of(sheetCtx).pop();
+                  _snack('Таймер сна: ${e.key}');
                 },
               ),
           ],
@@ -632,32 +403,40 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  void _speedSheet(BuildContext context, WidgetRef ref) {
+  void _speedSheet() {
+    final tokens = _skin(ref).tokens;
     const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
     final current = ref.read(playbackProvider).speed;
-    final accent = Theme.of(context).colorScheme.primary;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface1,
-      builder: (_) => SafeArea(
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusLg),
+      ),
+      builder: (sheetCtx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Скорость',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            Padding(
+              padding: EdgeInsets.all(tokens.space16),
+              child: Text(
+                'Скорость',
+                style: tokens.title.copyWith(color: tokens.textPrimary),
+              ),
             ),
             for (final s in speeds)
-              ListTile(
-                title: Text('${s}x'),
+              _menuItem(
+                tokens: tokens,
+                icon: AppIcons.sync,
+                title: '${s}x',
+                // Отметка текущей скорости — галочкой акцента: список короткий,
+                // сравнивать цифры не нужно.
                 trailing: (s - current).abs() < 0.01
-                    ? Icon(Icons.check, color: accent)
+                    ? AppIcon(AppIcons.check, color: tokens.accent, size: 18)
                     : null,
                 onTap: () {
                   ref.read(playbackProvider).setSpeed(s);
-                  Navigator.pop(context);
+                  Navigator.of(sheetCtx).pop();
                 },
               ),
           ],
@@ -666,9 +445,107 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  static String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString();
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  /// Пункт шторки меню. Свой виджет, а не ListTile: ListTile тащит за собой
+  /// Material-тему (шрифты, радиусы, цвета состояний), и тогда шторка плеера
+  /// выглядела бы как чужой экран.
+  Widget _menuItem({
+    required DesignTokens tokens,
+    required AppIconData icon,
+    required String title,
+    required VoidCallback onTap,
+    String? subtitle,
+    Widget? trailing,
+  }) {
+    return Semantics(
+      button: true,
+      label: title,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.space16,
+            vertical: tokens.space12,
+          ),
+          child: Row(
+            children: [
+              AppIcon(icon, color: tokens.accent, size: 22),
+              SizedBox(width: tokens.space12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: tokens.body.copyWith(color: tokens.textPrimary),
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        subtitle,
+                        style: tokens.caption
+                            .copyWith(color: tokens.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Шапка плеера: закрыть — заголовок — меню.
+class _PlayerTopBar extends StatelessWidget {
+  const _PlayerTopBar({
+    required this.tokens,
+    required this.onClose,
+    required this.onMore,
+  });
+
+  final DesignTokens tokens;
+  final VoidCallback onClose;
+  final VoidCallback? onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: onClose,
+          icon: AppIcon(
+            AppIcons.chevronDown,
+            size: 22,
+            color: tokens.textSecondary,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            'СЕЙЧАС ИГРАЕТ',
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.micro.copyWith(color: tokens.textTertiary),
+          ),
+        ),
+        IconButton(
+          onPressed: onMore,
+          icon: AppIcon(
+            AppIcons.more,
+            size: 22,
+            color: tokens.textSecondary,
+          ),
+        ),
+      ],
+    );
   }
 }

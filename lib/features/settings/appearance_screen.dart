@@ -2,9 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_settings.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/skin.dart';
+import '../../design/skin_registry.dart';
+import '../../design/tokens/design_tokens.dart';
 
+/// Экран «Внешний вид».
+///
+/// Четыре ручки: тема, фон, акцент, анимации. Раньше здесь же были «вид плеера»
+/// (винил/обложка/CD), «скругления углов» и «шрифт» — их убрали вместе с
+/// винилом и CD: форму и шрифт задаёт скин, а не этот экран.
 class AppearanceScreen extends ConsumerStatefulWidget {
   const AppearanceScreen({super.key});
 
@@ -19,7 +27,8 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
   @override
   void initState() {
     super.initState();
-    final hsv = HSVColor.fromColor(Color(ref.read(themeSettingsProvider).customColor));
+    final hsv =
+        HSVColor.fromColor(Color(ref.read(themeSettingsProvider).customColor));
     _hue = hsv.hue;
     _sat = hsv.saturation.clamp(0.2, 1.0);
   }
@@ -33,20 +42,50 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
   Widget build(BuildContext context) {
     final ts = ref.watch(themeSettingsProvider);
     final ctl = ref.read(themeSettingsProvider);
+    final skin = ref.watch(skinProvider);
+    // Токены текущего скина: экран внешнего вида — единственное место, где
+    // ручки настроек и оформление должны быть одного вида, иначе переключатель
+    // темы выглядел бы как чужеродная вставка.
+    final tokens = skinFor(skin).tokens;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Внешний вид')),
+      backgroundColor: tokens.background,
+      appBar: AppBar(
+        backgroundColor: tokens.background,
+        foregroundColor: tokens.textPrimary,
+        title: Text(
+          'Внешний вид',
+          style: tokens.title.copyWith(color: tokens.textPrimary),
+        ),
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: EdgeInsets.fromLTRB(
+          tokens.space16,
+          tokens.space8,
+          tokens.space16,
+          tokens.space24,
+        ),
         children: [
-          _section('Фон'),
+          _section(tokens, 'Тема'),
+          _Seg(
+            tokens: tokens,
+            labels: const ['iOS', 'iPod'],
+            index: skin.index,
+            // Скин по умолчанию — первый в перечислении, поэтому индексы
+            // совпадают с SkinId.values.
+            onTap: (i) => ref.read(skinProvider.notifier).select(SkinId.values[i]),
+          ),
+          _section(tokens, 'Фон'),
           Row(
             children: [
               for (var i = 0; i < kBgPresets.length; i++)
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.only(right: i == 0 ? 10 : 0),
+                    padding: EdgeInsets.only(
+                      right: i == 0 ? tokens.space12 : 0,
+                    ),
                     child: _BgCard(
+                      tokens: tokens,
                       preset: kBgPresets[i],
                       selected: ts.bgIndex == i,
                       onTap: () => ctl.setBackground(i),
@@ -55,20 +94,22 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
                 ),
             ],
           ),
-          _section('Акцентный цвет'),
+          _section(tokens, 'Акцентный цвет'),
           _Seg(
+            tokens: tokens,
             labels: const ['Динамический', 'Пресеты', 'Свой'],
             index: ts.accentMode.index,
             onTap: (i) => ctl.setAccentMode(AccentMode.values[i]),
           ),
           if (ts.accentMode == AccentMode.preset) ...[
-            const SizedBox(height: 12),
+            SizedBox(height: tokens.space12),
             Wrap(
-              spacing: 12,
-              runSpacing: 12,
+              spacing: tokens.space12,
+              runSpacing: tokens.space12,
               children: [
                 for (var i = 0; i < kAccentPresets.length; i++)
                   _Swatch(
+                    tokens: tokens,
                     color: kAccentPresets[i],
                     selected: ts.presetIndex == i,
                     onTap: () => ctl.setPreset(i),
@@ -77,7 +118,7 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
             ),
           ],
           if (ts.accentMode == AccentMode.custom) ...[
-            const SizedBox(height: 14),
+            SizedBox(height: tokens.space16),
             Row(
               children: [
                 Container(
@@ -88,13 +129,15 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
                     shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Text('Свой цвет',
-                    style: TextStyle(color: AppColors.white60, fontSize: 13)),
+                SizedBox(width: tokens.space12),
+                Text(
+                  'Свой цвет',
+                  style: tokens.body.copyWith(color: tokens.textSecondary),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            _label('Оттенок'),
+            SizedBox(height: tokens.space8),
+            _label(tokens, 'Оттенок'),
             Slider(
               min: 0,
               max: 360,
@@ -104,7 +147,7 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
                 _applyCustom();
               },
             ),
-            _label('Насыщенность'),
+            _label(tokens, 'Насыщенность'),
             Slider(
               min: 0.2,
               max: 1,
@@ -115,84 +158,86 @@ class _AppearanceScreenState extends ConsumerState<AppearanceScreen> {
               },
             ),
           ],
-          _section('Вид плеера'),
+          _section(tokens, 'Анимации'),
           _Seg(
-            // Порядок подписей строго по индексам PlayerView.
-            labels: const ['Винил', 'Обложка', 'CD'],
-            index: ts.playerView.index,
-            onTap: (i) => ctl.setPlayerView(PlayerView.values[i]),
-          ),
-          _section('Анимации'),
-          _Seg(
+            tokens: tokens,
             labels: const ['Максимум', 'Сдержанные', 'Минимум'],
             index: ts.animLevel.index,
             onTap: (i) => ctl.setAnimLevel(AnimLevel.values[i]),
-          ),
-          _section('Скругления углов'),
-          _Seg(
-            labels: const ['Острые', 'Средние', 'Круглые'],
-            index: ts.corners.index,
-            onTap: (i) => ctl.setCorners(CornerStyle.values[i]),
-          ),
-          _section('Шрифт'),
-          _Seg(
-            labels: const ['Poppins', 'Системный'],
-            index: ts.systemFont ? 1 : 0,
-            onTap: (i) => ctl.setSystemFont(i == 1),
           ),
         ],
       ),
     );
   }
 
-  Widget _section(String t) => Padding(
-        padding: const EdgeInsets.fromLTRB(2, 22, 2, 10),
-        child: Text(t,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+  Widget _section(DesignTokens tokens, String t) => Padding(
+        padding: EdgeInsets.only(top: tokens.space24, bottom: tokens.space12),
+        child: Text(
+          t,
+          style: tokens.caption.copyWith(
+            color: tokens.textTertiary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       );
 
-  Widget _label(String t) => Padding(
-        padding: const EdgeInsets.only(left: 2, top: 4),
-        child: Text(t,
-            style: TextStyle(fontSize: 12, color: AppColors.white45)),
+  Widget _label(DesignTokens tokens, String t) => Padding(
+        padding: EdgeInsets.only(left: tokens.space2, top: tokens.space4),
+        child: Text(
+          t,
+          style: tokens.micro.copyWith(color: tokens.textTertiary),
+        ),
       );
 }
 
 class _BgCard extends StatelessWidget {
-  const _BgCard(
-      {required this.preset, required this.selected, required this.onTap});
+  const _BgCard({
+    required this.tokens,
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final DesignTokens tokens;
   final BgPreset preset;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 80,
         decoration: BoxDecoration(
           color: preset.background,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(tokens.radiusMd),
           border: Border.all(
-              color: selected ? accent : Colors.white12,
-              width: selected ? 2 : 1),
+            color: selected ? tokens.accent : tokens.separator,
+            width: selected ? 2 : 1,
+          ),
         ),
         alignment: Alignment.bottomLeft,
-        padding: const EdgeInsets.all(10),
+        padding: EdgeInsets.all(tokens.space8),
         child: Row(
           children: [
             Container(
               width: 22,
               height: 22,
               decoration: BoxDecoration(
-                  color: preset.surface2,
-                  borderRadius: BorderRadius.circular(6)),
+                color: preset.surface2,
+                borderRadius: BorderRadius.circular(tokens.radiusSm),
+              ),
             ),
-            const SizedBox(width: 8),
-            Text(preset.name,
-                style: const TextStyle(fontSize: 12.5, color: Colors.white)),
+            SizedBox(width: tokens.space8),
+            Expanded(
+              child: Text(
+                preset.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.caption.copyWith(color: tokens.textPrimary),
+              ),
+            ),
           ],
         ),
       ),
@@ -201,8 +246,14 @@ class _BgCard extends StatelessWidget {
 }
 
 class _Swatch extends StatelessWidget {
-  const _Swatch(
-      {required this.color, required this.selected, required this.onTap});
+  const _Swatch({
+    required this.tokens,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final DesignTokens tokens;
   final Color color;
   final bool selected;
   final VoidCallback onTap;
@@ -218,10 +269,12 @@ class _Swatch extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(
-              color: selected ? Colors.white : Colors.transparent, width: 3),
+            color: selected ? tokens.accent : Colors.transparent,
+            width: 3,
+          ),
         ),
         child: selected
-            ? const Icon(Icons.check, size: 20, color: Colors.black)
+            ? AppIcon(AppIcons.check, size: 20, color: tokens.accentOn)
             : null,
       ),
     );
@@ -229,19 +282,24 @@ class _Swatch extends StatelessWidget {
 }
 
 class _Seg extends StatelessWidget {
-  const _Seg(
-      {required this.labels, required this.index, required this.onTap});
+  const _Seg({
+    required this.tokens,
+    required this.labels,
+    required this.index,
+    required this.onTap,
+  });
+
+  final DesignTokens tokens;
   final List<String> labels;
   final int index;
   final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface2,
-        borderRadius: BorderRadius.circular(14),
+        color: tokens.surfaceAlt,
+        borderRadius: BorderRadius.circular(tokens.radiusMd),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -252,22 +310,29 @@ class _Seg extends StatelessWidget {
                 onTap: () => onTap(i),
                 child: Container(
                   alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  padding: EdgeInsets.symmetric(vertical: tokens.space8),
                   decoration: BoxDecoration(
                     color: i == index
-                        ? accent.withValues(alpha: 0.20)
+                        ? tokens.accent.withValues(alpha: 0.20)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(tokens.radiusSm),
                     border: Border.all(
-                        color: i == index ? accent : Colors.transparent),
+                      color: i == index ? tokens.accent : Colors.transparent,
+                    ),
                   ),
-                  child: Text(labels[i],
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: i == index ? Colors.white : AppColors.white60,
-                        fontWeight:
-                            i == index ? FontWeight.w500 : FontWeight.w400,
-                      )),
+                  child: Text(
+                    labels[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.caption.copyWith(
+                      color: i == index
+                          ? tokens.textPrimary
+                          : tokens.textSecondary,
+                      fontWeight: i == index
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
                 ),
               ),
             ),

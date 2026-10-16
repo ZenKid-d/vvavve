@@ -3,86 +3,237 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/widgets/track_card.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/tokens/design_tokens.dart';
+import '../../design/widgets/blocks.dart';
+import '../common/skin_controls.dart';
+import '../common/skin_tokens.dart';
+import '../common/track_row.dart';
 
+/// Статистика: две вёрстки одного и того же набора чисел.
+///
+/// iOS показывает метрики плиткой 2×2 крупными числами — их четыре, и глаз
+/// считывает «сетку» быстрее, чем строки. iPod показывает их же таблицей с
+/// LCD-шрифтом и разделителями: на монохромном экране плитка без цвета
+/// выглядит как четыре одинаковых серых прямоугольника, а строка «метка —
+/// значение» читается как строка приборной панели.
 class StatsScreen extends ConsumerWidget {
   const StatsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lib = ref.watch(libraryProvider);
-    final tracks = lib.topTracks(limit: 30);
-    final artists = lib.topArtists(limit: 12);
-    final accent = Theme.of(context).colorScheme.primary;
-
-    if (tracks.isEmpty && lib.totalListened == Duration.zero) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Статистика')),
-        body: Center(
-          child: Text('Пока нет прослушиваний',
-              style: TextStyle(color: AppColors.white45)),
-        ),
-      );
-    }
-
+    final tokens = skinOf(context).tokens;
     return Scaffold(
-      appBar: AppBar(title: const Text('Статистика')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+      backgroundColor: tokens.background,
+      body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 2.1,
+          // Своя «шапка» вместо AppBar: экран открывается маршрутом и должен
+          // выглядеть так же, как остальные, а Material-AppBar притащил бы тему,
+          // ради которой всё затевалось.
+          SizedBox(
+            height: 56,
+            child: Row(
               children: [
-                _Metric('Всего прослушано', _fmtDur(lib.totalListened),
-                    accent: accent, big: true),
-                _Metric('Прослушиваний', '${lib.totalPlays}'),
-                _Metric('Уникальных треков', '${lib.uniqueTracks}'),
-                _Metric('Артистов', '${lib.uniqueArtists}'),
+                SkinIconButton(
+                  icon: AppIcons.back,
+                  tooltip: 'Назад',
+                  onPressed: () => Navigator.maybePop(context),
+                ),
+                Expanded(
+                  child: Text(
+                    'Статистика',
+                    style: tokens.title.copyWith(color: tokens.textPrimary),
+                  ),
+                ),
               ],
             ),
           ),
-          if (artists.isNotEmpty) ...[
-            _header('Топ артистов'),
-            for (var i = 0; i < artists.length; i++)
-              ListTile(
-                leading: Text('${i + 1}',
-                    style: TextStyle(color: AppColors.white45)),
-                title: Text(artists[i].key,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: Text('${artists[i].value}',
-                    style: TextStyle(color: accent)),
+          const Expanded(child: StatsContent()),
+        ],
+      ),
+    );
+  }
+}
+
+/// Содержимое без «шапки» — чтобы оболочка скина (у которой своя панель
+/// разделов) могла встроить его без второй шапки.
+class StatsContent extends ConsumerWidget {
+  const StatsContent({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final skin = skinOf(context);
+    final tokens = skin.tokens;
+    final id = skin.id;
+    final lib = ref.watch(libraryProvider);
+    final tracks = lib.topTracks(limit: 30);
+    final artists = lib.topArtists(limit: 12);
+
+    if (tracks.isEmpty && lib.totalListened == Duration.zero) {
+      return EmptyState(
+        tokens: tokens,
+        icon: AppIcons.stats,
+        title: 'Пока нет прослушиваний',
+        subtitle: 'Слушайте музыку — здесь появятся цифры и ваш топ.',
+      );
+    }
+
+    final queue = tracks.map((e) => e.key).toList();
+    return ListView(
+      padding: EdgeInsets.only(bottom: tokens.space24),
+      children: [
+        id.isIpod
+            ? _IpodMetrics(
+                tokens: tokens,
+                rows: [
+                  ('Всего прослушано', fmtDuration(lib.totalListened)),
+                  ('Прослушиваний', '${lib.totalPlays}'),
+                  ('Уникальных треков', '${lib.uniqueTracks}'),
+                  ('Артистов', '${lib.uniqueArtists}'),
+                ],
+              )
+            : _IosMetrics(
+                tokens: tokens,
+                items: [
+                  ('Всего прослушано', fmtDuration(lib.totalListened)),
+                  ('Прослушиваний', '${lib.totalPlays}'),
+                  ('Уникальных треков', '${lib.uniqueTracks}'),
+                  ('Артистов', '${lib.uniqueArtists}'),
+                ],
               ),
-          ],
-          _header('Топ треков'),
-          for (final e in tracks)
-            TrackRow(
-              track: e.key,
-              onTap: () => playTrack(ref, context, e.key,
-                  queue: tracks.map((x) => x.key).toList()),
-              trailing: Text('${e.value}',
-                  style: TextStyle(color: accent, fontSize: 13)),
+        if (artists.isNotEmpty) ...[
+          SectionHeader(tokens: tokens, title: 'Топ артистов'),
+          for (var i = 0; i < artists.length; i++)
+            SkinMenuRow(
+              // Номер в подписи, а не отдельной колонкой: в iPod-меню колонки
+              // нет, а «1. …» одинаково читается в обеих темах.
+              title: '${i + 1}. ${artists[i].key}',
+              trailing: Text(
+                '${artists[i].value}',
+                style: tokens.caption.copyWith(color: tokens.accent),
+              ),
+            ),
+        ],
+        SectionHeader(tokens: tokens, title: 'Топ треков'),
+        for (var i = 0; i < tracks.length; i++)
+          SkinMenuRow(
+            title: '${i + 1}. ${tracks[i].key.title}',
+            subtitle: tracks[i].key.artist,
+            onTap: () => playTrack(ref, context, tracks[i].key, queue: queue),
+            trailing: Text(
+              '${tracks[i].value}',
+              style: tokens.caption.copyWith(color: tokens.accent),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Метрики iOS: сетка 2×2 крупными числами.
+class _IosMetrics extends StatelessWidget {
+  const _IosMetrics({required this.tokens, required this.items});
+
+  final DesignTokens tokens;
+  final List<(String, String)> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.space16,
+        tokens.space16,
+        tokens.space16,
+        tokens.space4,
+      ),
+      child: GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: tokens.space12,
+        crossAxisSpacing: tokens.space12,
+        childAspectRatio: 2.1,
+        children: [
+          for (final (label, value) in items)
+            Container(
+              padding: EdgeInsets.all(tokens.space12),
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                borderRadius: BorderRadius.circular(tokens.radiusLg),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.micro.copyWith(color: tokens.textTertiary),
+                  ),
+                  SizedBox(height: tokens.space4),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.title.copyWith(color: tokens.textPrimary),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
     );
   }
-
-  Widget _header(String t) => Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
-        child: Text(t,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-      );
 }
 
-String _fmtDur(Duration d) {
+/// Метрики iPod: строки «метка — значение» монохромным LCD-шрифтом.
+class _IpodMetrics extends StatelessWidget {
+  const _IpodMetrics({required this.tokens, required this.rows});
+
+  final DesignTokens tokens;
+  final List<(String, String)> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final (label, value) in rows)
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.space16,
+              vertical: tokens.space12,
+            ),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: tokens.separator),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.caption.copyWith(color: tokens.textSecondary),
+                  ),
+                ),
+                SizedBox(width: tokens.space12),
+                Text(
+                  value,
+                  style: tokens.headline.copyWith(color: tokens.textPrimary),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Длительность в «человеческих» единицах: д/ч/мин/сек.
+String fmtDuration(Duration d) {
   final days = d.inDays;
   final hours = d.inHours % 24;
   final mins = d.inMinutes % 60;
@@ -90,40 +241,4 @@ String _fmtDur(Duration d) {
   if (d.inHours > 0) return '${d.inHours} ч $mins мин';
   if (d.inMinutes > 0) return '$mins мин';
   return '${d.inSeconds} сек';
-}
-
-class _Metric extends StatelessWidget {
-  const _Metric(this.label, this.value, {this.accent, this.big = false});
-  final String label;
-  final String value;
-  final Color? accent;
-  final bool big;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface2,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: TextStyle(fontSize: 11.5, color: AppColors.white45)),
-          const SizedBox(height: 4),
-          Text(value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: big ? 22 : 20,
-                fontWeight: FontWeight.w600,
-                color: big ? (accent ?? Colors.white) : Colors.white,
-              )),
-        ],
-      ),
-    );
-  }
 }

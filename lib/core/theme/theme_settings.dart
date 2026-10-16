@@ -5,13 +5,17 @@ import 'app_colors.dart';
 
 enum AccentMode { dynamic, preset, custom }
 
-/// Вид пластинки в плеере. Новые варианты добавляем только в конец: индекс
-/// сохраняется в SharedPreferences (`ap_player`).
-enum PlayerView { vinyl, cover, cd }
-
 enum AnimLevel { max, moderate, min }
 
-enum CornerStyle { sharp, medium, round }
+/// Радиус скруглений для Material-виджетов, которые остались вне скинов
+/// (AlertDialog, Card, старые экраны).
+///
+/// Раньше это была настройка «Скругления углов» с тремя вариантами. С появлением
+/// двух скинов ручка стала вредной: у iPod радиусы почти нулевые, у iOS — крупные,
+/// и общий радиус для обоих означал либо «скруглить корпус iPod», либо
+/// «посадить iOS на квадратные кнопки». Скин задаёт форму сам (см. DesignTokens),
+/// а это значение — только для того, что скина не касается.
+const double kAppRadius = 12;
 
 /// Тёмные фоны-пресеты.
 class BgPreset {
@@ -38,7 +42,7 @@ const kAccentPresets = <Color>[
   Color(0xFFFF6E6E), // коралл
 ];
 
-/// Расширение темы — несёт текущий радиус скруглений в любой виджет.
+/// Расширение темы — несёт радиус скруглений для виджетов вне скинов.
 class AppShapes extends ThemeExtension<AppShapes> {
   final double radius;
   const AppShapes(this.radius);
@@ -65,35 +69,35 @@ class ThemeSettingsController extends ChangeNotifier {
   AccentMode accentMode = AccentMode.dynamic;
   int presetIndex = 4;
   int customColor = 0xFFB388FF;
-  PlayerView playerView = PlayerView.vinyl;
   AnimLevel animLevel = AnimLevel.max;
-  CornerStyle corners = CornerStyle.round;
-  bool systemFont = false;
 
   BgPreset get bg => kBgPresets[bgIndex.clamp(0, kBgPresets.length - 1)];
   Color get presetColor =>
       kAccentPresets[presetIndex.clamp(0, kAccentPresets.length - 1)];
 
-  double get radius => switch (corners) {
-        CornerStyle.sharp => 6,
-        CornerStyle.medium => 14,
-        CornerStyle.round => 22,
-      };
-
   bool get spin => animLevel != AnimLevel.min;
   bool get richMotion => animLevel == AnimLevel.max;
+
+  /// Ключи настроек, которые ушли вместе с редизайном (винил/CD, скругления,
+  /// системный шрифт). Чистим при первом запуске: в prefs они больше не читаются,
+  /// а мусорные значения только занимают место и путают при отладке.
+  static const List<String> _obsoleteKeys = [
+    'ap_player', // вид плеера: винил / обложка / CD
+    'ap_corners', // скругления углов
+    'ap_sysfont', // переключатель шрифта Poppins / системный
+  ];
 
   void _load() {
     bgIndex = _prefs.getInt('ap_bg') ?? 0;
     accentMode = AccentMode.values[_prefs.getInt('ap_accentMode') ?? 0];
     presetIndex = _prefs.getInt('ap_preset') ?? 4;
     customColor = _prefs.getInt('ap_custom') ?? 0xFFB388FF;
-    // clamp — на случай отката на версию, где вариантов было меньше.
-    playerView = PlayerView.values[
-        (_prefs.getInt('ap_player') ?? 0).clamp(0, PlayerView.values.length - 1)];
     animLevel = AnimLevel.values[_prefs.getInt('ap_anim') ?? 0];
-    corners = CornerStyle.values[_prefs.getInt('ap_corners') ?? 2];
-    systemFont = _prefs.getBool('ap_sysfont') ?? false;
+    for (final key in _obsoleteKeys) {
+      // remove возвращает Future<bool>: ждать нечего, ошибка записи в prefs
+      // не должна ронять запуск приложения.
+      _prefs.remove(key);
+    }
     AppColors.applyBackground(bg.background, bg.surface1, bg.surface2);
     notifyListeners();
   }
@@ -123,27 +127,9 @@ class ThemeSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setPlayerView(PlayerView v) {
-    playerView = v;
-    _prefs.setInt('ap_player', v.index);
-    notifyListeners();
-  }
-
   void setAnimLevel(AnimLevel l) {
     animLevel = l;
     _prefs.setInt('ap_anim', l.index);
-    notifyListeners();
-  }
-
-  void setCorners(CornerStyle c) {
-    corners = c;
-    _prefs.setInt('ap_corners', c.index);
-    notifyListeners();
-  }
-
-  void setSystemFont(bool v) {
-    systemFont = v;
-    _prefs.setBool('ap_sysfont', v);
     notifyListeners();
   }
 }

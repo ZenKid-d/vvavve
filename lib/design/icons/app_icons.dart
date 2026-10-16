@@ -95,6 +95,7 @@ class AppIcons {
   static const stats = _Icon.stats;
   static const settings = _Icon.settings;
   static const gear = _Icon.gear;
+  static const systemUpdate = _Icon.systemUpdate;
 
   static const back = _Icon.back;
   static const close = _Icon.close;
@@ -162,6 +163,7 @@ enum _Icon implements AppIconData {
   stats(IconData(0x25A5, fontFamily: _sysFont), 24), // ▥
   settings(IconData(0x2699, fontFamily: _sysFont), 22), // ⚙
   gear(IconData(0x2699, fontFamily: _sysFont), 22), // ⚙
+  systemUpdate(IconData(0x21C5, fontFamily: _sysFont), 22), // ⇅
 
   back(IconData(0x2039, fontFamily: _sysFont), 20), // ‹
   close(IconData(0x2715, fontFamily: _sysFont), 20), // ✕

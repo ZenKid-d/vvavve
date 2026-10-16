@@ -1,280 +1,33 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/album_menu.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/widgets/artwork.dart';
-import '../../core/widgets/track_card.dart';
-import '../../data/sources/soundcloud_source.dart';
-import '../../data/sources/youtube_music_source.dart';
+import '../../data/sources/youtube_music_source.dart'
+    show extractYoutubeVideoId;
+import '../../design/icons/app_icons.dart';
+import '../../design/widgets/blocks.dart';
 import '../../domain/models/album_result.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
-import '../album/album_screen.dart';
 import '../artist/artist_screen.dart';
+import '../common/album_tile.dart';
+import '../common/section_tab_bar.dart';
+import '../common/skin_controls.dart';
+import '../common/skin_tokens.dart';
+import '../common/track_row.dart';
+import 'search_controller.dart';
 
-final _queryProvider = StateProvider<String>((ref) => '');
-final _filterProvider = StateProvider<SourceType?>((ref) => null);
-
-/// perSource первой порции у Aggregator.search (режим «Все»).
-const _baseSearchLimit = 15;
-
-/// Размер «страницы» при фильтре по одному источнику — реальный offset/page
-/// самого источника (SoundCloud/VK/Яндекс).
-const _filteredPageSize = 20;
-
-/// Сколько страниц читать сразу при первом открытии фильтра — стартовая
-/// глубина ~40 (2×20).
-const _initialFilteredPages = 2;
-
-/// Насколько растить perSource режима «Все» за одно долистывание.
-const _pageStep = 15;
-
-/// Состояние постраничного поиска: текущие результаты + флаги догрузки.
-class _SearchState {
-  const _SearchState({
-    this.results = const AsyncValue<List<Track>>.data(<Track>[]),
-    this.loadingMore = false,
-    this.exhausted = false,
-  });
-
-  final AsyncValue<List<Track>> results;
-
-  /// Идёт догрузка следующей порции (список на экране остаётся, снизу спиннер).
-  final bool loadingMore;
-
-  /// Источник(и) больше не отдают новых треков — по скроллу сеть не дёргаем.
-  final bool exhausted;
-
-  _SearchState copyWith({
-    AsyncValue<List<Track>>? results,
-    bool? loadingMore,
-    bool? exhausted,
-  }) =>
-      _SearchState(
-        results: results ?? this.results,
-        loadingMore: loadingMore ?? this.loadingMore,
-        exhausted: exhausted ?? this.exhausted,
-      );
-}
-
-/// Инкрементальный пагинатор поиска. Копит уже полученные страницы и при
-/// долистывании догружает ТОЛЬКО следующую (без перезапроса всех 0..N), дедуп
-/// по uid. Перезапускается при смене запроса/фильтра/набора источников.
-final _searchProvider =
-    StateNotifierProvider.autoDispose<_SearchPager, _SearchState>(
-        (ref) => _SearchPager(ref));
-
-class _SearchPager extends StateNotifier<_SearchState> {
-  _SearchPager(this._ref) : super(const _SearchState()) {
-    _enabled = _ref.read(settingsProvider).enabledSources.toSet();
-    _ref.listen(_queryProvider, (_, __) => _restart(), fireImmediately: true);
-    _ref.listen(_filterProvider, (_, __) => _restart());
-    // Набор включённых источников влияет и на эффективный фильтр, и на «Все».
-    // Перезапускаем только когда реально изменился состав (settingsProvider
-    // шлёт уведомления и по не связанным с источниками настройкам).
-    _ref.listen(settingsProvider, (_, next) {
-      final now = next.enabledSources;
-      if (now.length != _enabled.length || !now.containsAll(_enabled)) {
-        _enabled = now.toSet();
-        _restart();
-      }
-    });
-  }
-
-  final Ref _ref;
-  Set<SourceType> _enabled = const {};
-
-  // Аккумулятор текущего запроса. _token отсекает результаты устаревших
-  // запросов (пользователь сменил запрос, пока летел ответ).
-  int _token = 0;
-  final List<Track> _items = [];
-  final Set<String> _seen = {};
-  int _nextPage = 0;
-
-  SourceType? get _effectiveFilter {
-    final raw = _ref.read(_filterProvider);
-    // Источник могли выключить, пока был выбран его фильтр — ведём как «Все».
-    return (raw != null && _ref.read(settingsProvider).enabledSources.contains(raw))
-        ? raw
-        : null;
-  }
-
-  Future<void> _restart() async {
-    final token = ++_token;
-    _items.clear();
-    _seen.clear();
-    _nextPage = 0;
-    final q = _ref.read(_queryProvider).trim();
-    if (q.isEmpty) {
-      state = const _SearchState();
-      return;
-    }
-    // Вставленная ссылка на видео YouTube — резолвим ровно это видео.
-    final videoId = extractYoutubeVideoId(q);
-    if (videoId != null) {
-      await _resolveDirect(token, videoId);
-      return;
-    }
-    state = const _SearchState(results: AsyncValue.loading());
-    final initial =
-        _effectiveFilter != null ? _initialFilteredPages : 1; // «Все» — 1 порция
-    await _fetchMore(token, initial);
-  }
-
-  Future<void> _resolveDirect(int token, String videoId) async {
-    // Прямую ссылку открываем, только если YouTube включён — иначе играли бы
-    // через отключённый пользователем источник.
-    if (!_ref.read(settingsProvider).enabledSources.contains(SourceType.youtube)) {
-      state = _SearchState(
-        results: AsyncValue.error(
-          'Включите YouTube в настройках, чтобы открывать ссылки на видео.',
-          StackTrace.current,
-        ),
-        exhausted: true,
-      );
-      return;
-    }
-    state = const _SearchState(results: AsyncValue.loading());
-    try {
-      final t = await _ref.read(youtubeSourceProvider).resolveVideo(videoId);
-      if (token != _token) return;
-      _items.add(t);
-      _seen.add(t.uid);
-      state = _SearchState(
-          results: AsyncValue.data(List.of(_items)), exhausted: true);
-    } catch (e, st) {
-      if (token != _token) return;
-      state =
-          _SearchState(results: AsyncValue.error(e, st), exhausted: true);
-    }
-  }
-
-  /// Догрузка следующей порции (вызывается при долистывании до конца).
-  void loadMore() {
-    if (state.loadingMore || state.exhausted) return;
-    if (state.results is! AsyncData) return;
-    state = state.copyWith(loadingMore: true);
-    _fetchMore(_token, 1);
-  }
-
-  Future<void> _fetchMore(int token, int pages) async {
-    final q = _ref.read(_queryProvider).trim();
-    final filter = _effectiveFilter;
-    try {
-      for (var i = 0; i < pages; i++) {
-        final page = await _fetchPage(q, filter, _nextPage);
-        if (token != _token) return;
-        _nextPage++;
-        var added = 0;
-        for (final t in page) {
-          if (_seen.add(t.uid)) {
-            _items.add(t);
-            added++;
-          }
-        }
-        // Ничего нового (источник без пагинации / выдал только дубли / пусто) —
-        // дальше по скроллу не тянем.
-        if (added == 0) {
-          state = _SearchState(
-              results: AsyncValue.data(List.of(_items)), exhausted: true);
-          return;
-        }
-      }
-      state = _SearchState(results: AsyncValue.data(List.of(_items)));
-    } catch (e, st) {
-      if (token != _token) return;
-      // Ошибку показываем, только если совсем ничего нет; иначе оставляем уже
-      // загруженное и НЕ помечаем exhausted — сбой мог быть транзиентным.
-      state = _items.isEmpty
-          ? _SearchState(results: AsyncValue.error(e, st))
-          : _SearchState(results: AsyncValue.data(List.of(_items)));
-    }
-  }
-
-  Future<List<Track>> _fetchPage(String q, SourceType? filter, int page) {
-    final aggregator = _ref.read(aggregatorProvider);
-    if (filter != null) {
-      final source = aggregator.sourceFor(filter);
-      // Источник без пагинации на page > 0 вернул бы ту же первую страницу —
-      // не ходим в сеть, пусть вызывающий пометит exhausted (added == 0).
-      if (page > 0 && !source.supportsPaging) return Future.value(const []);
-      return source.search(q, limit: _filteredPageSize, page: page);
-    }
-    // «Все»: у агрегатора нет постраничности — растим perSource, дедуп в
-    // [_fetchMore] оставит только новые треки.
-    return aggregator.search(q, perSource: _baseSearchLimit + page * _pageStep);
-  }
-}
-
-/// Поиск альбомов по submitted-запросу (не пагинируется — короткая выдача).
-/// Нативно умеют только YouTube Music и SoundCloud, поэтому при фильтре на
-/// Яндекс/VK альбомы не ищем (пустой результат без похода в сеть).
-final _albumsProvider = FutureProvider.autoDispose<List<AlbumResult>>((ref) async {
-  final q = ref.watch(_queryProvider).trim();
-  if (q.isEmpty || extractYoutubeVideoId(q) != null) return const [];
-  final enabled = ref.watch(settingsProvider).enabledSources;
-  final rawFilter = ref.watch(_filterProvider);
-  final filter =
-      (rawFilter != null && enabled.contains(rawFilter)) ? rawFilter : null;
-  if (filter != null &&
-      filter != SourceType.youtube &&
-      filter != SourceType.soundcloud) {
-    return const [];
-  }
-  final aggregator = ref.read(aggregatorProvider);
-  if (filter == SourceType.youtube) {
-    final src = aggregator.sourceFor(SourceType.youtube);
-    return src is YoutubeMusicSource ? src.searchAlbums(q) : const [];
-  }
-  if (filter == SourceType.soundcloud) {
-    final src = aggregator.sourceFor(SourceType.soundcloud);
-    return src is SoundcloudSource ? src.searchAlbums(q) : const [];
-  }
-  return aggregator.searchAlbums(q);
-});
-
-/// История поиска (последние запросы), хранится в SharedPreferences.
-final _recentSearchesProvider =
-    StateNotifierProvider<_RecentSearches, List<String>>(
-        (ref) => _RecentSearches(ref.read(prefsProvider)));
-
-class _RecentSearches extends StateNotifier<List<String>> {
-  _RecentSearches(this._prefs)
-      : super(_prefs.getStringList('recent_searches') ?? const []);
-  final SharedPreferences _prefs;
-
-  void add(String q) {
-    q = q.trim();
-    if (q.isEmpty) return;
-    final list = [
-      q,
-      ...state.where((e) => e.toLowerCase() != q.toLowerCase()),
-    ].take(12).toList();
-    state = list;
-    _prefs.setStringList('recent_searches', list);
-  }
-
-  void remove(String q) {
-    final list = state.where((e) => e != q).toList();
-    state = list;
-    _prefs.setStringList('recent_searches', list);
-  }
-
-  void clear() {
-    state = const [];
-    _prefs.setStringList('recent_searches', const []);
-  }
-}
-
+/// Поиск по всем включённым источникам.
+///
+/// Логика (пагинация, недавние запросы, альбомы) живёт в
+/// [search_controller.dart]; здесь только вёрстка. Ключевые отличия от
+/// прежней версии — не поведение, а форма: поле фильтра и переключатель
+/// источников рисуются скином, а подсказки/недавние запросы показываются
+/// строками меню, потому что «плашка Material» на монохромном экране выглядела
+/// как чужое приложение.
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -307,7 +60,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final pos = _scrollController.position;
     if (pos.maxScrollExtent > 0 && pos.pixels >= pos.maxScrollExtent - 400) {
       // Догрузку и все гарды (исчерпано/уже грузим/нет данных) держит пагинатор.
-      ref.read(_searchProvider.notifier).loadMore();
+      ref.read(searchProvider.notifier).loadMore();
     }
   }
 
@@ -320,39 +73,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return;
     }
     _debounce = Timer(const Duration(milliseconds: 250), () async {
-      final s = await _fetchSuggestions(q);
+      final s = await fetchSearchSuggestions(ref, q);
       if (mounted && _controller.text.trim() == q) {
         setState(() => _suggestions = s);
       }
     });
   }
 
-  Future<List<String>> _fetchSuggestions(String q) async {
-    try {
-      final r = await ref.read(dioProvider).get<String>(
-            'https://suggestqueries.google.com/complete/search',
-            queryParameters: {'client': 'firefox', 'ds': 'yt', 'q': q},
-            options: Options(responseType: ResponseType.plain),
-          );
-      final data = jsonDecode(r.data ?? '[]');
-      final list =
-          (data is List && data.length > 1) ? data[1] as List : const [];
-      return list.map((e) => e.toString()).take(8).toList();
-    } catch (_) {
-      return const [];
-    }
-  }
-
   void _submit(String v) {
     final q = v.trim();
     if (q.isEmpty) return;
     _controller.text = q;
-    // Пагинатор сам перезапустится на смену запроса (слушает _queryProvider).
-    ref.read(_queryProvider.notifier).state = q;
+    // Пагинатор сам перезапустится на смену запроса (слушает searchQueryProvider).
+    ref.read(searchQueryProvider.notifier).state = q;
     // Сырую ссылку в историю недавних запросов не сохраняем — бесполезна для
     // повторного поиска.
     if (extractYoutubeVideoId(q) == null) {
-      ref.read(_recentSearchesProvider.notifier).add(q);
+      ref.read(recentSearchesProvider.notifier).add(q);
     }
     setState(() => _suggestions = const []);
     FocusScope.of(context).unfocus();
@@ -360,82 +97,79 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final search = ref.watch(_searchProvider);
-    final enabledSources = ref.watch(settingsProvider).enabledSources;
-    final rawFilter = ref.watch(_filterProvider);
-    final filter =
-        rawFilter != null && enabledSources.contains(rawFilter) ? rawFilter : null;
-    final submitted = ref.watch(_queryProvider).trim();
+    final tokens = skinOf(context).tokens;
+    final search = ref.watch(searchProvider);
+    final submitted = ref.watch(searchQueryProvider).trim();
 
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: TextField(
+          padding: EdgeInsets.fromLTRB(
+            tokens.space16,
+            tokens.space8,
+            tokens.space16,
+            tokens.space8,
+          ),
+          child: SkinFilterField(
             controller: _controller,
             autofocus: true,
             textInputAction: TextInputAction.search,
+            hint: 'Поиск по всем сервисам',
             onChanged: _onChanged,
             onSubmitted: _submit,
-            decoration: InputDecoration(
-              hintText: 'Поиск по всем сервисам',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _controller.clear();
-                  ref.read(_queryProvider.notifier).state = '';
-                  setState(() => _suggestions = const []);
-                },
-              ),
-              filled: true,
-              fillColor: AppColors.surface2,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
-              ),
-            ),
+            // Крестик виден всегда, как и раньше: поле не пересобирается на
+            // каждый символ, а прятать его по вводу — значит показать с
+            // задержкой в один кадр.
+            onClear: () {
+              _controller.clear();
+              ref.read(searchQueryProvider.notifier).state = '';
+              setState(() => _suggestions = const []);
+            },
           ),
         ),
-        SizedBox(
-          height: 40,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              _Chip(
-                  label: 'Все',
-                  active: filter == null,
-                  onTap: () =>
-                      ref.read(_filterProvider.notifier).state = null),
-              for (final s in SourceType.values)
-                if (enabledSources.contains(s))
-                  _Chip(
-                    label: s.shortLabel,
-                    active: filter == s,
-                    color: s.color,
-                    onTap: () =>
-                        ref.read(_filterProvider.notifier).state = s,
-                  ),
-            ],
-          ),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: tokens.space16),
+          child: _sourceFilter(),
         ),
         Expanded(child: _body(search, submitted)),
       ],
     );
   }
 
-  Widget _body(_SearchState search, String submitted) {
+  /// Ряд источников. Подписи короче [SourceTypeX.shortLabel]: в сегментах
+  /// «SoundCloud» не влезает, а «SC» читается так же.
+  Widget _sourceFilter() {
+    final enabled = ref.watch(settingsProvider).enabledSources;
+    final rawFilter = ref.watch(searchFilterProvider);
+    final filter =
+        rawFilter != null && enabled.contains(rawFilter) ? rawFilter : null;
+    const labels = {
+      SourceType.youtube: 'YT',
+      SourceType.soundcloud: 'SC',
+      SourceType.yandex: 'Яндекс',
+      SourceType.vk: 'VK',
+    };
+    final sources = SourceType.values.where(enabled.contains).toList();
+    return SectionTabBar(
+      labels: ['Все', for (final s in sources) labels[s] ?? s.shortLabel],
+      // Индексы совпадают с [sources], потому что «Все» стоит первым.
+      index: filter == null ? 0 : sources.indexOf(filter) + 1,
+      onChanged: (i) => ref.read(searchFilterProvider.notifier).state =
+          i == 0 ? null : sources[i - 1],
+    );
+  }
+
+  Widget _body(SearchState search, String submitted) {
+    final tokens = skinOf(context).tokens;
     // Пока пользователь печатает — показываем живые подсказки.
     if (_suggestions.isNotEmpty) {
       return ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
           for (final s in _suggestions)
-            ListTile(
-              leading: Icon(Icons.search, color: AppColors.white45, size: 20),
-              title: Text(s),
-              trailing: Icon(Icons.north_west, color: AppColors.white45, size: 16),
+            SkinMenuRow(
+              title: s,
+              leading: AppIcons.search,
               onTap: () => _submit(s),
             ),
         ],
@@ -445,28 +179,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // Подгрузка следующей порции: держим уже показанный список, а не
     // перекрываем его полноэкранным спиннером на время дозапроса.
     if (search.loadingMore && search.results.hasValue) {
-      return _resultsList(search.results.value!, submitted, loadingFooter: true);
+      return _resultsList(search.results.value!, submitted,
+          loadingFooter: true);
     }
 
     return search.results.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Ошибка поиска:\n$e',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.white45)),
-        ),
-      ),
+      loading: () => LoadingBlock(tokens: tokens, lines: 4),
+      error: (e, _) => ErrorBlock(
+          tokens: tokens, message: 'Ошибка поиска:\n$e', onRetry: null),
       data: (tracks) => _resultsList(tracks, submitted, loadingFooter: false),
     );
   }
 
   Widget _resultsList(List<Track> tracks, String submitted,
       {required bool loadingFooter}) {
+    final tokens = skinOf(context).tokens;
     if (submitted.isEmpty) return _recentsOrHint();
-    final albums = ref.watch(_albumsProvider).value ?? const <AlbumResult>[];
-    if (tracks.isEmpty && albums.isEmpty) return _hint('Ничего не найдено.');
+    final albums =
+        ref.watch(searchAlbumsProvider).value ?? const <AlbumResult>[];
+    if (tracks.isEmpty && albums.isEmpty) {
+      return EmptyState(
+        tokens: tokens,
+        icon: AppIcons.search,
+        title: 'Ничего не найдено',
+        subtitle: 'Попробуйте другой запрос или другой источник.',
+      );
+    }
     // Уникальные артисты из результатов (для перехода на их страницы).
     final artists = <String>[];
     final seen = <String>{};
@@ -482,230 +220,200 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _albumsRow(albums),
+              if (albums.isNotEmpty)
+                AlbumStrip(albums: albums.take(20).toList(), header: 'Альбомы'),
               _artistsRow(artists),
             ],
           );
         }
         final idx = i - 1;
         if (idx >= tracks.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
+          return Padding(
+            padding: EdgeInsets.symmetric(vertical: tokens.space24),
+            child: Center(child: LoadingBlock(tokens: tokens, lines: 1)),
           );
         }
         final t = tracks[idx];
-        return TrackRow(
-          track: t,
-          onTap: () => playTrack(ref, context, t, queue: tracks),
+        return Column(
+          children: [
+            SkinTrackRow(
+              track: t,
+              onTap: () => playTrack(ref, context, t, queue: tracks),
+            ),
+            const SkinRowSeparator(),
+          ],
         );
       },
     );
   }
 
   Widget _recentsOrHint() {
-    final recents = ref.watch(_recentSearchesProvider);
+    final tokens = skinOf(context).tokens;
+    final recents = ref.watch(recentSearchesProvider);
     if (recents.isEmpty) {
-      return _hint('Введите запрос — найдём по YouTube, '
-          'SoundCloud и Яндексу сразу. Либо вставьте ссылку на видео YouTube.');
+      return EmptyState(
+        tokens: tokens,
+        icon: AppIcons.search,
+        title: 'Что послушать?',
+        subtitle: 'Введите запрос — найдём по YouTube, SoundCloud и Яндексу '
+            'сразу. Либо вставьте ссылку на видео YouTube.',
+      );
     }
     return ListView(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+          padding: EdgeInsets.fromLTRB(
+            tokens.space16,
+            tokens.space12,
+            tokens.space12,
+            tokens.space4,
+          ),
           child: Row(
             children: [
-              Text('Недавние запросы',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.white60,
-                      fontWeight: FontWeight.w500)),
-              const Spacer(),
-              TextButton(
-                onPressed: () =>
-                    ref.read(_recentSearchesProvider.notifier).clear(),
-                child: const Text('Очистить'),
+              Expanded(
+                child: Text(
+                  'Недавние запросы',
+                  style: tokens.caption.copyWith(color: tokens.textTertiary),
+                ),
+              ),
+              _TextAction(
+                label: 'Очистить',
+                onTap: () => ref.read(recentSearchesProvider.notifier).clear(),
               ),
             ],
           ),
         ),
         for (final q in recents)
-          ListTile(
-            leading: Icon(Icons.history, color: AppColors.white45),
-            title: Text(q),
-            trailing: IconButton(
-              icon: Icon(Icons.close, color: AppColors.white45, size: 18),
-              onPressed: () =>
-                  ref.read(_recentSearchesProvider.notifier).remove(q),
-            ),
+          SkinMenuRow(
+            title: q,
+            leading: AppIcons.clock,
             onTap: () => _submit(q),
+            trailing: SkinIconButton(
+              icon: AppIcons.close,
+              tooltip: 'Убрать из истории',
+              color: tokens.textTertiary,
+              onPressed: () =>
+                  ref.read(recentSearchesProvider.notifier).remove(q),
+            ),
           ),
-      ],
-    );
-  }
-
-  Widget _albumsRow(List<AlbumResult> albums) {
-    if (albums.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-          child: Text('Альбомы',
-              style: TextStyle(
-                  fontSize: 12.5,
-                  color: AppColors.white60,
-                  fontWeight: FontWeight.w500)),
-        ),
-        SizedBox(
-          height: 168,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: albums.take(20).length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (_, i) {
-              final a = albums[i];
-              return SizedBox(
-                width: 120,
-                child: GestureDetector(
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => AlbumScreen(seed: a.toSeedTrack()))),
-                  onLongPress: () => showAlbumMenu(context, ref, a),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Stack(
-                        children: [
-                          Artwork(a.artworkUrl, size: 120, seed: a.uid),
-                          Positioned(
-                            right: 4,
-                            bottom: 4,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: a.source.color,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(a.source.shortLabel,
-                                  style: TextStyle(
-                                      fontSize: 9,
-                                      color: a.source.onColor,
-                                      fontWeight: FontWeight.w600)),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(a.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12.5, fontWeight: FontWeight.w500)),
-                      Text(a.artist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 11.5, color: AppColors.white45)),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        const Divider(height: 14),
       ],
     );
   }
 
   Widget _artistsRow(List<String> artists) {
     if (artists.isEmpty) return const SizedBox.shrink();
+    final skin = skinOf(context);
+    final tokens = skin.tokens;
+    final id = skin.id;
+    final list = artists.take(12).toList();
+    final chips = [
+      for (final a in list)
+        _ArtistChip(
+          label: a,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => ArtistScreen(artist: a)),
+          ),
+        ),
+    ];
+    // iPod без горизонтальной ленты: артисты показываются меню-строками.
+    if (id.isIpod) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(tokens: tokens, title: 'Артисты'),
+          for (final a in list)
+            SkinMenuRow(
+              title: a,
+              leading: AppIcons.musicNote,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => ArtistScreen(artist: a)),
+              ),
+            ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-          child: Text('Артисты',
-              style: TextStyle(
-                  fontSize: 12.5,
-                  color: AppColors.white60,
-                  fontWeight: FontWeight.w500)),
-        ),
+        SectionHeader(tokens: tokens, title: 'Артисты'),
         SizedBox(
-          height: 36,
+          height: tokens.micro.fontSize! * 2 + tokens.space16 * 2,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: artists.take(12).length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              final a = artists[i];
-              return ActionChip(
-                avatar: const Icon(Icons.person, size: 16),
-                label: Text(a, style: const TextStyle(fontSize: 12.5)),
-                onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => ArtistScreen(artist: a))),
-              );
-            },
+            padding: EdgeInsets.symmetric(horizontal: tokens.space16),
+            itemCount: chips.length,
+            separatorBuilder: (_, __) => SizedBox(width: tokens.space8),
+            itemBuilder: (_, i) => chips[i],
           ),
         ),
-        const Divider(height: 14),
+        const SkinRowSeparator(),
       ],
     );
   }
-
-  Widget _hint(String text) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Text(text,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.white45, fontSize: 13)),
-        ),
-      );
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.active,
-    required this.onTap,
-    this.color,
-  });
+/// Чип артиста: подпись в рамке, тап — страница артиста.
+///
+/// Свой, а не Material-[ActionChip]: тот приносит свою заливку, радиус и
+/// тень, а в iPod-скине это выглядело бы как вклеенный элемент из другой
+/// темы. Здесь тот же смысл — «короткая метка, по ней можно перейти».
+class _ArtistChip extends StatelessWidget {
+  const _ArtistChip({required this.label, required this.onTap});
 
   final String label;
-  final bool active;
   final VoidCallback onTap;
-  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? Theme.of(context).colorScheme.primary;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: active ? c.withValues(alpha: 0.18) : AppColors.surface2,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-                color: active ? c : Colors.transparent, width: 1),
+    final tokens = skinOf(context).tokens;
+    return Center(
+      child: Material(
+        color: const Color(0x00000000),
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 180),
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.space12,
+              vertical: tokens.space8,
+            ),
+            decoration: BoxDecoration(
+              color: tokens.surfaceAlt,
+              borderRadius: BorderRadius.circular(tokens.radiusPill),
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.caption.copyWith(color: tokens.textSecondary),
+            ),
           ),
-          child: Text(label,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: active ? Colors.white : AppColors.white60,
-              )),
+        ),
+      ),
+    );
+  }
+}
+
+/// Тихое текстовое действие («Очистить») — без рамки и заливки.
+class _TextAction extends StatelessWidget {
+  const _TextAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = skinOf(context).tokens;
+    return Material(
+      color: const Color(0x00000000),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.all(tokens.space8),
+          child: Text(
+            label,
+            style: tokens.caption.copyWith(color: tokens.accent),
+          ),
         ),
       ),
     );
