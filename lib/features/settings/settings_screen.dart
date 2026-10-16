@@ -1,26 +1,43 @@
-import 'dart:convert';
-
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:go_router/go_router.dart';
 
-import '../../core/auth/auth_service.dart' show AuthFailure;
-import '../../core/io/file_io.dart';
-import '../../sync/sync_service.dart' show SyncService, SyncState;
 import '../../core/providers.dart';
 import '../../core/routing/app_router.dart' show Routes;
 import '../../core/theme/app_colors.dart';
-import '../../core/update_controller.dart';
 import '../../core/update_flow.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/sync_status_text.dart';
 import '../../core/widgets/wordmark.dart';
 import '../../domain/models/source_type.dart';
+import 'settings_controller.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  /// Показывает сообщение, если контроллер его вернул (null — нечего показывать:
+  /// операция прошла штатно или пользователь её отменил).
+  void _showOutcome(BuildContext context, String? message) {
+    if (message == null || !context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Кнопки «Экспорт»/«Импорт» бэкапа. Мессенджер и признак живости снимаем
+  /// ДО await: после него обращаться к context уже нельзя, а снекбар нужен.
+  Future<void> _backup(BuildContext context, WidgetRef ref,
+      {required bool export}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final mounted = context.mounted;
+    final actions = SettingsActions(ref);
+    final outcome =
+        export ? await actions.exportBackup() : await actions.importBackup();
+    final message = outcome.message;
+    if (message == null || !mounted) return;
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,7 +60,7 @@ class SettingsScreen extends ConsumerWidget {
           onTap: () => context.push(Routes.appearance),
         ),
         const SizedBox(height: 16),
-        const _Header('Источники'),
+        const _Header(SettingsCopy.sources),
         for (final s in SourceType.values)
           SwitchListTile(
             value: settings.isEnabled(s),
@@ -51,7 +68,7 @@ class SettingsScreen extends ConsumerWidget {
                 ref.read(settingsProvider).toggleSource(s, v),
             secondary: ServiceBadge(s, size: 26),
             title: Text(s.label),
-            subtitle: Text(_sourceHint(s),
+            subtitle: Text(SettingsCopy.sourceHint(s),
                 style: TextStyle(color: AppColors.white45, fontSize: 11)),
           ),
         // Предпочтительный источник для подмены при сбое/пейволле родного.
@@ -93,7 +110,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const _Header('Яндекс Музыка'),
+        const _Header(SettingsCopy.yandex),
         _TokenField(
           hasToken: settings.hasYandexToken,
           hint: 'OAuth-токен Яндекс Музыки',
@@ -101,7 +118,7 @@ class SettingsScreen extends ConsumerWidget {
           onDelete: () => ref.read(settingsProvider).setYandexToken(null),
         ),
         const SizedBox(height: 16),
-        const _Header('SoundCloud'),
+        const _Header(SettingsCopy.soundcloud),
         _TokenField(
           hasToken: settings.hasSoundcloudToken,
           hint: 'OAuth-токен SoundCloud (2-xxxxxx-...)',
@@ -113,7 +130,7 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         const _SoundcloudClientId(),
         const SizedBox(height: 16),
-        const _Header('VK Музыка'),
+        const _Header(SettingsCopy.vk),
         _TokenField(
           hasToken: settings.hasVkToken,
           hint: 'Access-токен VK',
@@ -126,7 +143,7 @@ class SettingsScreen extends ConsumerWidget {
           onDelete: () => ref.read(settingsProvider).setVkToken(null),
         ),
         const SizedBox(height: 16),
-        const _Header('Сеть'),
+        const _Header(SettingsCopy.network),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: settings.dohEnabled,
@@ -140,14 +157,13 @@ class SettingsScreen extends ConsumerWidget {
           ),
           onChanged: (v) {
             ref.read(settingsProvider).setDohEnabled(v);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Перезапустите приложение, чтобы применить')));
+            _showOutcome(context, SettingsCopy.restartRequired);
           },
         ),
         const SizedBox(height: 10),
         _HttpProxy(settings.httpProxy),
         const SizedBox(height: 16),
-        const _Header('Аудио'),
+        const _Header(SettingsCopy.audio),
         Consumer(builder: (context, ref, _) {
           final pc = ref.watch(playbackProvider);
           final cf = pc.crossfade;
@@ -245,12 +261,12 @@ class SettingsScreen extends ConsumerWidget {
         _DataSaverTile(),
         const _RealVizTile(),
         const SizedBox(height: 16),
-        const _Header('Резервная копия'),
+        const _Header(SettingsCopy.backup),
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _exportBackup(context, ref),
+                onPressed: () => _backup(context, ref, export: true),
                 icon: const Icon(Icons.upload_file, size: 18),
                 label: const Text('Экспорт'),
               ),
@@ -258,7 +274,7 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _importBackup(context, ref),
+                onPressed: () => _backup(context, ref, export: false),
                 icon: const Icon(Icons.download, size: 18),
                 label: const Text('Импорт'),
               ),
@@ -311,58 +327,15 @@ class SettingsScreen extends ConsumerWidget {
         ),
         _AutoDlLikesTile(),
         const SizedBox(height: 16),
-        const _Header('Last.fm'),
+        const _Header(SettingsCopy.lastfm),
         const _Lastfm(),
         const SizedBox(height: 16),
-        const _Header('Обновление'),
+        const _Header(SettingsCopy.update),
         const _UpdateTile(),
         const SizedBox(height: 24),
         const _About(),
       ],
     );
-  }
-
-  String _sourceHint(SourceType s) => switch (s) {
-        SourceType.youtube => 'Играет внутри приложения. Ключи не нужны.',
-        SourceType.soundcloud =>
-          'Играет внутри. Go+ — по токену твоей подписки.',
-        SourceType.yandex => 'Играет внутри. Нужен токен аккаунта (риск бана).',
-        SourceType.vk =>
-          'Играет внутри. Нужен токен клиента VK с доступом к аудио (риск бана).',
-      };
-}
-
-Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
-  try {
-    final data = ref.read(libraryProvider).exportData();
-    final json = const JsonEncoder.withIndent('  ').convert(data);
-    await shareTextFile(json,
-        filename: 'roundds_backup.json',
-        mime: 'application/json',
-        text: 'vvavve — резервная копия библиотеки');
-  } catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Ошибка экспорта: $e')));
-    }
-  }
-}
-
-Future<void> _importBackup(BuildContext context, WidgetRef ref) async {
-  final content = await pickJsonText();
-  if (content == null) return;
-  try {
-    final data = jsonDecode(content) as Map<String, dynamic>;
-    await ref.read(libraryProvider).importData(data);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Библиотека импортирована')));
-    }
-  } catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Ошибка импорта: $e')));
-    }
   }
 }
 
@@ -381,47 +354,21 @@ class _AccountTile extends ConsumerStatefulWidget {
 class _AccountTileState extends ConsumerState<_AccountTile> {
   bool _busy = false;
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _toggle() async {
     setState(() => _busy = true);
     try {
-      await action();
-    } on AuthFailure catch (e) {
-      _snack(e.message);
-    } catch (e) {
-      _snack('Не удалось: $e');
+      final error = await SettingsActions(ref).toggleAccount();
+      if (error != null && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error)));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _snack(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-  }
-
-  /// Честный статус вместо вечного «синхронизация включена»: если облако
-  /// недоступно (а в России это регулярно), пользователь должен видеть это, а
-  /// не гадать, почему лайки не доехали.
-  String _syncLabel(SyncService sync) {
-    switch (sync.state) {
-      case SyncState.syncing:
-        return 'Синхронизация…';
-      case SyncState.error:
-        return 'Облако недоступно — данные сохраняются на устройстве';
-      case SyncState.idle:
-        final at = sync.lastSyncAt;
-        if (at == null) return 'Синхронизировано';
-        final t = TimeOfDay.fromDateTime(at);
-        final mm = t.minute.toString().padLeft(2, '0');
-        return 'Синхронизировано в ${t.hour}:$mm';
-      case SyncState.off:
-        return 'Синхронизация не запущена';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final auth = ref.read(authServiceProvider);
     final user = ref.watch(authStateProvider).value;
     final sync = ref.watch(syncServiceProvider);
 
@@ -436,20 +383,13 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
               'Синхронизация лайков, плейлистов и статистики между устройствами',
               style: TextStyle(color: AppColors.white45, fontSize: 11),
             )
-          : SyncStatusText(text: _syncLabel(sync), state: sync.state),
+          : SyncStatusText(
+              text: SettingsActions(ref).syncLabel(sync), state: sync.state),
       trailing: _busy
           ? const SizedBox(
               width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
           : Icon(user == null ? Icons.login : Icons.logout, size: 20),
-      onTap: _busy
-          ? null
-          : () => _run(() async {
-                if (user == null) {
-                  await auth.signIn();
-                } else {
-                  await auth.signOut();
-                }
-              }),
+      onTap: _busy ? null : _toggle,
     );
   }
 }
@@ -590,15 +530,11 @@ class _HttpProxyState extends ConsumerState<_HttpProxy> {
 
   Future<void> _apply(String value) async {
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await ref.read(settingsProvider).setHttpProxy(value);
-    if (!ok) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Неверный формат — ожидается host:port, напр. '
-              '127.0.0.1:1080')));
-      return;
-    }
-    messenger.showSnackBar(const SnackBar(
-        content: Text('Перезапустите приложение, чтобы применить')));
+    final r = await SettingsActions(ref).applyHttpProxy(value);
+    messenger.showSnackBar(SnackBar(
+        content: Text(r == ProxyApply.invalid
+            ? SettingsCopy.proxyInvalid
+            : SettingsCopy.restartRequired)));
   }
 
   @override
@@ -680,15 +616,12 @@ class _SoundcloudClientIdState extends ConsumerState<_SoundcloudClientId> {
       _loading = true;
       _status = null;
     });
-    try {
-      final id = await ref.read(soundcloudSourceProvider).refreshClientId();
-      await ref.read(prefsProvider).setString('sc_client_id', id);
-      setState(() => _status = 'Обновлён ✓');
-    } catch (e) {
-      setState(() => _status = 'Ошибка: $e');
-    } finally {
-      setState(() => _loading = false);
-    }
+    final status = await SettingsActions(ref).refreshSoundcloudClientId();
+    if (!mounted) return;
+    setState(() {
+      _status = status;
+      _loading = false;
+    });
   }
 
   @override
@@ -743,17 +676,20 @@ class _LastfmState extends ConsumerState<_Lastfm> {
   }
 
   Future<void> _login() async {
-    final svc = ref.read(lastfmServiceProvider);
     setState(() {
       _busy = true;
       _msg = null;
     });
-    await svc.saveCredentials(_key.text, _secret.text);
-    final ok = await svc.login(_user.text, _pass.text);
+    final msg = await SettingsActions(ref).lastfmSignIn(LastfmCredentials(
+      apiKey: _key.text,
+      secret: _secret.text,
+      login: _user.text,
+      password: _pass.text,
+    ));
     if (mounted) {
       setState(() {
         _busy = false;
-        _msg = ok ? null : 'Не удалось войти — проверьте ключ/логин/пароль';
+        _msg = msg;
       });
     }
   }
@@ -769,7 +705,7 @@ class _LastfmState extends ConsumerState<_Lastfm> {
           Expanded(child: Text('Вошли как ${svc.username}')),
           TextButton(
             onPressed: () async {
-              await ref.read(lastfmServiceProvider).logout();
+              await SettingsActions(ref).lastfmSignOut();
               setState(() {});
             },
             child: const Text('Выйти'),
@@ -866,7 +802,7 @@ class _AutoDlLikesTile extends ConsumerStatefulWidget {
 class _AutoDlLikesTileState extends ConsumerState<_AutoDlLikesTile> {
   @override
   Widget build(BuildContext context) {
-    final on = ref.read(prefsProvider).getBool('autodl_likes') ?? false;
+    final on = SettingsActions(ref).autoDownloadLikes;
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
       value: on,
@@ -874,7 +810,7 @@ class _AutoDlLikesTileState extends ConsumerState<_AutoDlLikesTile> {
       subtitle: Text('Скачивать трек офлайн при добавлении в избранное',
           style: TextStyle(color: AppColors.white45, fontSize: 11)),
       onChanged: (v) {
-        ref.read(prefsProvider).setBool('autodl_likes', v);
+        SettingsActions(ref).setAutoDownloadLikes(v);
         setState(() {});
       },
     );
@@ -889,10 +825,8 @@ class _DataSaverTile extends ConsumerStatefulWidget {
 class _DataSaverTileState extends ConsumerState<_DataSaverTile> {
   @override
   Widget build(BuildContext context) {
-    final prefs = ref.read(prefsProvider);
-    final q = prefs.getInt('stream_quality') ??
-        ((prefs.getBool('data_saver') ?? false) ? 0 : 2);
-    const labels = ['Низкое', 'Среднее', 'Высокое'];
+    final q = SettingsActions(ref).streamQuality;
+    const labels = SettingsCopy.qualityLabels;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -912,8 +846,7 @@ class _DataSaverTileState extends ConsumerState<_DataSaverTile> {
                   label: Text(labels[i]),
                   selected: q == i,
                   onSelected: (_) {
-                    prefs.setInt('stream_quality', i);
-                    ref.read(youtubeSourceProvider).streamQuality = i;
+                    SettingsActions(ref).setStreamQuality(i);
                     setState(() {});
                   },
                 ),
@@ -943,51 +876,30 @@ class _UpdateTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ctl = ref.watch(updateControllerProvider);
-    final version = ctl.info?.version ?? '';
+    final tile = updateTile(ctl);
 
-    // Скачано — предлагаем установить.
-    if (ctl.isReady) {
-      return ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.system_update),
-        title: Text('Установить обновление $version'),
-        subtitle: Text('Файл скачан — можно установить в любой момент',
-            style: TextStyle(color: AppColors.white45, fontSize: 11)),
-        trailing: const Icon(Icons.download_done),
-        onTap: () => ref.read(updateControllerProvider).install(),
-      );
-    }
-
-    // Идёт фоновая загрузка.
-    if (ctl.isDownloading) {
-      final pct = (ctl.progress * 100).round();
-      return ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.system_update),
-        title: Text('Загрузка обновления $version…'),
-        subtitle: Text('$pct% · продолжается в фоне',
-            style: TextStyle(color: AppColors.white45, fontSize: 11)),
-        trailing: const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2)),
-      );
-    }
-
-    final checking = ctl.stage == UpdateStage.checking;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.system_update),
-      title: const Text('Проверить обновления'),
-      subtitle: Text('Загрузка новой версии прямо из приложения',
+      title: Text(tile.title),
+      subtitle: Text(tile.subtitle,
           style: TextStyle(color: AppColors.white45, fontSize: 11)),
-      trailing: checking
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2))
-          : const Icon(Icons.chevron_right),
-      onTap: checking ? null : () => checkForUpdate(context, ref, silent: false),
+      // Иконка/спиннер и доступность тапа выведены из действия: раньше это были
+      // три почти одинаковых ListTile, и «качает / проверяем / можно жать»
+      // приходилось держать в синхроне вручную.
+      trailing: switch (tile.action) {
+        UpdateAction.install => const Icon(Icons.download_done),
+        UpdateAction.check => const Icon(Icons.chevron_right),
+        UpdateAction.none => const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2)),
+      },
+      onTap: switch (tile.action) {
+        UpdateAction.install => () => ref.read(updateControllerProvider).install(),
+        UpdateAction.check => () => checkForUpdate(context, ref, silent: false),
+        UpdateAction.none => null,
+      },
     );
   }
 }

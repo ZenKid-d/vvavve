@@ -1,8 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../core/album_menu.dart';
@@ -19,18 +16,7 @@ import '../../domain/models/playlist.dart';
 import '../../domain/models/track.dart';
 import '../album/album_screen.dart';
 import '../common/track_list_screen.dart';
-
-/// Строка фильтра медиатеки (по названию/артисту), в нижнем регистре.
-final _libQueryProvider = StateProvider<String>((ref) => '');
-
-enum PlaylistSort { recent, name, count }
-
-final _plSortProvider = StateProvider<PlaylistSort>((ref) => PlaylistSort.recent);
-
-bool _matchTrack(Track t, String q) =>
-    q.isEmpty ||
-    t.title.toLowerCase().contains(q) ||
-    t.artist.toLowerCase().contains(q);
+import 'library_controller.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -40,8 +26,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  int _tab = 0; // 0 плейлисты, 1 любимое, 2 загрузки, 3 очередь
-  static const _titles = ['Плейлисты', 'Любимое', 'Загрузки', 'Очередь'];
+  LibraryTab _tab = LibraryTab.playlists;
 
   final _search = TextEditingController();
 
@@ -51,15 +36,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     super.dispose();
   }
 
-  void _selectTab(int i) {
-    setState(() => _tab = i);
+  void _selectTab(LibraryTab tab) {
+    setState(() => _tab = tab);
     _search.clear();
-    ref.read(_libQueryProvider.notifier).state = '';
+    ref.read(libraryQueryProvider.notifier).state = '';
   }
 
   @override
   Widget build(BuildContext context) {
-    final libQuery = ref.watch(_libQueryProvider);
+    final libQuery = ref.watch(libraryQueryProvider);
     return Column(
       children: [
         Padding(
@@ -71,18 +56,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      for (var i = 0; i < _titles.length; i++) ...[
+                      for (var i = 0; i < libraryTabs.length; i++) ...[
                           _Toggle(
-                              label: _titles[i],
-                              active: _tab == i,
-                              onTap: () => _selectTab(i)),
+                              label: libraryTabs[i],
+                              active: _tab == LibraryTab.values[i],
+                              onTap: () => _selectTab(LibraryTab.values[i])),
                           const SizedBox(width: 8),
                         ],
                     ],
                   ),
                 ),
               ),
-              if (_tab == 0) ...[
+              if (_tab == LibraryTab.playlists) ...[
                 _PlaylistSortButton(),
                 IconButton(
                     icon: const Icon(Icons.library_add_outlined),
@@ -91,34 +76,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 IconButton(
                     icon: const Icon(Icons.add), onPressed: _createPlaylist),
               ],
-              if (_tab == 1)
+              if (_tab == LibraryTab.liked)
                 IconButton(
                   icon: const Icon(Icons.download),
                   tooltip: 'Скачать все лайки',
-                  onPressed: () {
-                    final liked = ref.read(libraryProvider).liked;
-                    if (liked.isNotEmpty &&
-                        !ref.read(downloadsProvider).playlistBusy) {
-                      ref
-                          .read(downloadsProvider)
-                          .downloadPlaylist('Избранное', liked);
-                      _snack('Скачивание «Избранное»…');
-                    }
-                  },
+                  onPressed: () async =>
+                      _snack(await LibraryActions(ref).downloadLiked()),
                 ),
             ],
           ),
         ),
-        if (_tab != 3)
+        if (_tab != LibraryTab.queue)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
             child: TextField(
               controller: _search,
-              onChanged: (v) => ref.read(_libQueryProvider.notifier).state =
-                  v.trim().toLowerCase(),
+              onChanged: (v) =>
+                  ref.read(libraryQueryProvider.notifier).state =
+                      v.trim().toLowerCase(),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: _tab == 0
+                hintText: _tab == LibraryTab.playlists
                     ? 'Фильтр плейлистов'
                     : 'Фильтр по названию или артисту',
                 prefixIcon: const Icon(Icons.search, size: 20),
@@ -128,7 +106,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         icon: const Icon(Icons.clear, size: 18),
                         onPressed: () {
                           _search.clear();
-                          ref.read(_libQueryProvider.notifier).state = '';
+                          ref.read(libraryQueryProvider.notifier).state = '';
                         },
                       ),
                 filled: true,
@@ -145,11 +123,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  Widget _bodyFor(int t) => switch (t) {
-        0 => _PlaylistsView(),
-        1 => const _LikedView(),
-        2 => const _DownloadsView(),
-        _ => const _QueueView(),
+  Widget _bodyFor(LibraryTab t) => switch (t) {
+        LibraryTab.playlists => _PlaylistsView(),
+        LibraryTab.liked => const _LikedView(),
+        LibraryTab.downloads => const _DownloadsView(),
+        LibraryTab.queue => const _QueueView(),
       };
 
   Future<void> _createPlaylist() async {
@@ -159,8 +137,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
   }
 
-  void _snack(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
+  /// null — показывать нечего (операция отменена или прошла штатно).
+  void _snack(String? msg) {
+    if (msg == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   void _showLoading() => showDialog(
         context: context,
@@ -168,8 +150,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
 
+  /// Импорт. Диалоги ввода и списки выбора остаются здесь (это чистый UI),
+  /// а сама операция — в [LibraryActions]: по нажатию кнопки «Импорт» screen
+  /// только спрашивает, откуда, и показывает то, что вернул контроллер.
   Future<void> _import() async {
-    final src = await showModalBottomSheet<String>(
+    final src = await showModalBottomSheet<PlaylistImportSource>(
       context: context,
       backgroundColor: AppColors.surface1,
       builder: (_) => SafeArea(
@@ -185,51 +170,63 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 leading: const FaIcon(FontAwesomeIcons.youtube,
                     color: Color(0xFFFF0000), size: 20),
                 title: const Text('Из YouTube (ссылка)'),
-                onTap: () => Navigator.pop(context, 'youtube')),
+                onTap: () =>
+                    Navigator.pop(context, PlaylistImportSource.youtube)),
             ListTile(
                 leading: const FaIcon(FontAwesomeIcons.youtube,
                     color: Color(0xFFFF0000), size: 20),
                 title: const Text('Лайки YouTube Music (вход Google)'),
-                onTap: () => Navigator.pop(context, 'ytlikes')),
+                onTap: () =>
+                    Navigator.pop(context, PlaylistImportSource.youtubeLikes)),
             ListTile(
                 leading: const FaIcon(FontAwesomeIcons.yandex,
                     color: Color(0xFFFFCC00), size: 20),
                 title: const Text('Из Яндекса (мои плейлисты)'),
-                onTap: () => Navigator.pop(context, 'yandex')),
+                onTap: () => Navigator.pop(context, PlaylistImportSource.yandex)),
             ListTile(
                 leading: const FaIcon(FontAwesomeIcons.spotify,
                     color: Color(0xFF1DB954), size: 20),
                 title: const Text('Из Spotify (ссылка)'),
                 subtitle: Text('Плейлист/альбом → играем из свободных источников',
                     style: TextStyle(color: AppColors.white45, fontSize: 11)),
-                onTap: () => Navigator.pop(context, 'spotify')),
+                onTap: () =>
+                    Navigator.pop(context, PlaylistImportSource.spotify)),
             ListTile(
                 leading: const Icon(Icons.format_list_bulleted),
                 title: const Text('Из списка (текст)'),
                 subtitle: Text('«Артист — Трек» построчно',
                     style: TextStyle(color: AppColors.white45, fontSize: 11)),
-                onTap: () => Navigator.pop(context, 'list')),
+                onTap: () => Navigator.pop(context, PlaylistImportSource.list)),
             ListTile(
                 leading: const Icon(Icons.folder_open),
                 title: const Text('Из файла (.json)'),
-                onTap: () => Navigator.pop(context, 'file')),
+                onTap: () => Navigator.pop(context, PlaylistImportSource.file)),
           ],
         ),
       ),
     );
-    if (src == 'youtube') {
-      await _importYoutube();
-    } else if (src == 'ytlikes') {
-      await _importYoutubeLikes();
-    } else if (src == 'yandex') {
-      await _importYandex();
-    } else if (src == 'spotify') {
-      await _importSpotify();
-    } else if (src == 'file') {
-      await _importPlaylistFile();
-    } else if (src == 'list') {
-      await _importFromList();
+    if (src == null) return;
+    switch (src) {
+      case PlaylistImportSource.youtube:
+        await _importYoutube();
+      case PlaylistImportSource.youtubeLikes:
+        await _importYoutubeLikes();
+      case PlaylistImportSource.yandex:
+        await _importYandex();
+      case PlaylistImportSource.spotify:
+        await _importSpotify();
+      case PlaylistImportSource.file:
+        await _importPlaylistFile();
+      case PlaylistImportSource.list:
+        await _importFromList();
     }
+  }
+
+  /// Прячет индикатор загрузки. Отдельный метод, потому что во всех ветках
+  /// импорта («поймали ошибку», «ничего не нашли», «сохранили») крутилка должна
+  /// закрыться одинаково — забытый pop оставлял бы её навсегда.
+  void _hideLoading() {
+    if (mounted) Navigator.pop(context); // индикатор
   }
 
   Future<void> _importSpotify() async {
@@ -258,40 +255,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
     if (url == null || url.trim().isEmpty) return;
     _showLoading();
-    final ({String name, List<String> queries}) data;
+    String? message;
     try {
-      data = await ref.read(spotifyImportProvider).fetch(url.trim());
-    } catch (e) {
-      if (mounted) Navigator.pop(context); // индикатор
-      _snack('$e');
-      return;
-    }
-    // Матчим каждый трек в нашем агрегаторе (пулом, с сохранением порядка).
-    final matched = List<Track?>.filled(data.queries.length, null);
-    var next = 0;
-    Future<void> worker() async {
-      while (true) {
-        final i = next++;
-        if (i >= data.queries.length) break;
-        try {
-          final r = await ref.read(aggregatorProvider).search(data.queries[i]);
-          if (r.isNotEmpty) matched[i] = r.first;
-        } catch (_) {}
-      }
-    }
-
-    try {
-      await Future.wait([for (var i = 0; i < 5; i++) worker()]);
+      message = await LibraryActions(ref).importFromSpotify(url);
     } finally {
-      if (mounted) Navigator.pop(context); // индикатор
+      _hideLoading();
     }
-    final tracks = matched.whereType<Track>().toList();
-    if (tracks.isEmpty) {
-      _snack('Ничего не удалось найти по этому плейлисту');
-      return;
-    }
-    await ref.read(libraryProvider).importPlaylist(data.name, tracks);
-    _snack('Импортировано: ${tracks.length} из ${data.queries.length}');
+    _snack(message);
   }
 
   Future<void> _importFromList() async {
@@ -320,75 +290,51 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       ),
     );
     if (text == null || text.trim().isEmpty) return;
-    final lines = text
-        .split('\n')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (lines.isEmpty) return;
     _showLoading();
-    final tracks = <Track>[];
+    late final ImportResult<MatchedTracks> res;
     try {
-      for (final line in lines) {
-        try {
-          final r = await ref.read(aggregatorProvider).search(line);
-          if (r.isNotEmpty) tracks.add(r.first);
-        } catch (_) {}
-      }
+      res = await LibraryActions(ref).matchTextList(text);
     } finally {
-      if (mounted) Navigator.pop(context); // индикатор
+      _hideLoading();
     }
-    if (tracks.isEmpty) {
-      _snack('Ничего не найдено по списку');
+    final found = res.value;
+    if (found == null) {
+      _snack(res.message);
       return;
     }
+    // Имя спрашиваем только когда уже что-то нашлось — иначе пользователь
+    // назовёт плейлист впустую.
     if (!mounted) return;
     final name = await _askName(context, 'Название плейлиста',
         initial: 'Мой список');
     if (name != null && name.isNotEmpty) {
-      await ref.read(libraryProvider).importPlaylist(name, tracks);
-      _snack('Импортировано: ${tracks.length} из ${lines.length}');
+      _snack(await LibraryActions(ref).saveTextList(found, name));
     }
   }
 
   Future<void> _importPlaylistFile() async {
+    // Выбор файла — системный диалог, его показывает экран; разбор и
+    // сохранение — уже в контроллере.
     final content = await pickJsonText();
     if (content == null) return;
-    try {
-      final data = jsonDecode(content);
-      final map = (data as Map).cast<String, dynamic>();
-      final name = (map['name'] as String?) ?? 'Импортированный плейлист';
-      final tracks = ((map['tracks'] as List?) ?? [])
-          .map((e) => Track.fromJson((e as Map).cast<String, dynamic>()))
-          .toList();
-      if (tracks.isEmpty) {
-        _snack('Файл пуст или неверного формата');
-        return;
-      }
-      await ref.read(libraryProvider).importPlaylist(name, tracks);
-      _snack('Импортировано: $name (${tracks.length} треков)');
-    } catch (e) {
-      _snack('Ошибка импорта файла: $e');
-    }
+    _snack(await LibraryActions(ref).importPlaylistJson(content));
   }
 
   Future<void> _importYoutubeLikes() async {
     _showLoading();
-    List<Track> tracks;
+    late final ImportResult<List<Track>> res;
     try {
-      tracks = await ref.read(googleYtImportProvider).importLikedVideos();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      _snack('Ошибка входа/импорта: $e');
-      return;
+      res = await LibraryActions(ref).fetchYoutubeLikes();
+    } finally {
+      _hideLoading();
     }
-    if (tracks.isEmpty) {
-      _snack('Лайкнутых треков не найдено');
+    final tracks = res.value;
+    if (tracks == null) {
+      _snack(res.message);
       return;
     }
     if (!mounted) return;
-    final choice = await showDialog<String>(
+    final choice = await showDialog<YoutubeLikesTarget>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.surface2,
@@ -396,22 +342,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         content: Text('Найдено треков: ${tracks.length}'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, 'playlist'),
+              onPressed: () => Navigator.pop(context, YoutubeLikesTarget.playlist),
               child: const Text('Отдельным плейлистом')),
           TextButton(
-              onPressed: () => Navigator.pop(context, 'liked'),
+              onPressed: () => Navigator.pop(context, YoutubeLikesTarget.liked),
               child: const Text('В «Избранное»')),
         ],
       ),
     );
-    if (choice == 'playlist') {
-      await ref
-          .read(libraryProvider)
-          .importPlaylist('YouTube — Мне понравилось', tracks);
-      _snack('Импортировано плейлистом: ${tracks.length}');
-    } else if (choice == 'liked') {
-      await ref.read(libraryProvider).addManyToLiked(tracks);
-      _snack('Добавлено в Избранное: ${tracks.length}');
+    if (choice != null) {
+      _snack(await LibraryActions(ref).saveYoutubeLikes(tracks, choice));
     }
   }
 
@@ -419,35 +359,37 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final url = await _askName(context, 'Ссылка на плейлист YouTube');
     if (url == null || url.isEmpty) return;
     _showLoading();
+    String? message;
     try {
-      final res = await ref.read(youtubeSourceProvider).importPlaylist(url);
-      if (mounted) Navigator.pop(context);
-      await ref.read(libraryProvider).importPlaylist(res.title, res.tracks);
-      _snack('Импортировано: ${res.title} (${res.tracks.length} треков)');
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      _snack('Ошибка импорта: $e');
+      message = await LibraryActions(ref).importFromYoutube(url);
+    } finally {
+      _hideLoading();
     }
+    _snack(message);
   }
 
   Future<void> _importYandex() async {
-    if (!ref.read(settingsProvider).hasYandexToken) {
-      _snack('Сначала добавьте токен Яндекса в Настройках');
+    final actions = LibraryActions(ref);
+    // Спрашиваем про токен ДО «крутилки»: импортировать всё равно нечем.
+    final missing = actions.missingYandexToken;
+    if (missing != null) {
+      _snack(missing);
       return;
     }
     _showLoading();
-    List<({int kind, String title, int count})> pls;
+    late final ImportResult<List<YandexPlaylist>> res;
     try {
-      pls = await ref.read(yandexSourceProvider).userPlaylists();
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      _snack('Ошибка: $e');
+      res = await actions.fetchYandexPlaylists();
+    } finally {
+      _hideLoading();
+    }
+    final pls = res.value;
+    if (pls == null) {
+      _snack(res.message);
       return;
     }
     if (!mounted) return;
-    final picked =
-        await showModalBottomSheet<({int kind, String title, int count})>(
+    final picked = await showModalBottomSheet<YandexPlaylist>(
       context: context,
       backgroundColor: AppColors.surface1,
       builder: (_) => SafeArea(
@@ -470,33 +412,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
     if (picked == null) return;
     _showLoading();
+    String? message;
     try {
-      final tracks =
-          await ref.read(yandexSourceProvider).playlistTracks(picked.kind);
-      if (mounted) Navigator.pop(context);
-      await ref.read(libraryProvider).importPlaylist(picked.title, tracks);
-      _snack('Импортировано: ${picked.title} (${tracks.length} треков)');
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      _snack('Ошибка: $e');
+      message = await actions.importYandexPlaylist(picked);
+    } finally {
+      _hideLoading();
     }
+    _snack(message);
   }
 }
-
-bool _matchAlbum(AlbumResult a, String q) =>
-    q.isEmpty ||
-    a.title.toLowerCase().contains(q) ||
-    a.artist.toLowerCase().contains(q);
 
 class _LikedView extends ConsumerWidget {
   const _LikedView();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final q = ref.watch(_libQueryProvider);
+    final q = ref.watch(libraryQueryProvider);
     final lib = ref.watch(libraryProvider);
-    final liked = lib.liked.where((t) => _matchTrack(t, q)).toList();
+    final liked = lib.liked.where((t) => matchTrack(t, q)).toList();
     final likedAlbums =
-        lib.likedAlbums.where((a) => _matchAlbum(a, q)).toList();
+        lib.likedAlbums.where((a) => matchAlbum(a, q)).toList();
     if (liked.isEmpty && likedAlbums.isEmpty) {
       return Center(
         child: Text(q.isEmpty ? 'Нет лайкнутых треков' : 'Ничего не найдено',
@@ -593,13 +527,13 @@ class _DownloadsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ctl = ref.watch(downloadsProvider);
-    final q = ref.watch(_libQueryProvider);
+    final q = ref.watch(libraryQueryProvider);
     // Недавно скачанные — сверху.
     final dl = ctl.downloads.reversed
-        .where((t) => _matchTrack(t, q))
+        .where((t) => matchTrack(t, q))
         .toList();
     final busy =
-        ctl.inProgress.where((t) => _matchTrack(t, q)).toList();
+        ctl.inProgress.where((t) => matchTrack(t, q)).toList();
     final accent = Theme.of(context).colorScheme.primary;
 
     if (dl.isEmpty && busy.isEmpty && !ctl.playlistBusy) {
@@ -738,61 +672,29 @@ class _Toggle extends StatelessWidget {
   }
 }
 
-int _plCreatedAt(String id) {
-  final m = RegExp(r'pl_(\d+)').firstMatch(id);
-  return m != null ? (int.tryParse(m.group(1)!) ?? 0) : 0;
-}
-
-/// Экспорт одного плейлиста в JSON-файл и «Поделиться».
-Future<void> _exportPlaylist(PlaylistX pl) async {
-  try {
-    final data = {
-      'roundds_playlist': 1,
-      'name': pl.name,
-      'tracks': pl.tracks.map((t) => t.toJson()).toList(),
+/// Иконки умных подборок — всё, что от них осталось в UI. Сами списки
+/// считает [buildSmartPlaylists], чтобы логика не жила в вёрстке.
+IconData _smartIcon(SmartPlaylistKind kind) => switch (kind) {
+      SmartPlaylistKind.top => Icons.local_fire_department,
+      SmartPlaylistKind.recent => Icons.history,
+      SmartPlaylistKind.liked => Icons.favorite,
     };
-    final json = const JsonEncoder.withIndent('  ').convert(data);
-    final safe = pl.name.replaceAll(RegExp(r'[^\wА-Яа-яЁё -]'), '_');
-    await shareTextFile(json,
-        filename: '$safe.json',
-        mime: 'application/json',
-        text: 'vvavve — плейлист «${pl.name}»');
-  } catch (_) {/* отмена/ошибка шаринга не критична */}
-}
-
-List<PlaylistX> _sortPlaylists(List<PlaylistX> list, PlaylistSort sort) {
-  final l = List<PlaylistX>.from(list);
-  switch (sort) {
-    case PlaylistSort.name:
-      l.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    case PlaylistSort.count:
-      l.sort((a, b) => b.tracks.length - a.tracks.length);
-    case PlaylistSort.recent:
-      l.sort((a, b) => _plCreatedAt(b.id).compareTo(_plCreatedAt(a.id)));
-  }
-  return l;
-}
 
 class _PlaylistSortButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    const labels = {
-      PlaylistSort.recent: 'Недавно добавленные',
-      PlaylistSort.name: 'По имени',
-      PlaylistSort.count: 'По числу треков',
-    };
     return PopupMenuButton<PlaylistSort>(
       icon: const Icon(Icons.sort),
       tooltip: 'Сортировка',
-      onSelected: (v) => ref.read(_plSortProvider.notifier).state = v,
+      onSelected: (v) => ref.read(playlistSortProvider.notifier).state = v,
       itemBuilder: (_) => [
-        for (final e in labels.entries)
+        for (final e in playlistSortLabels.entries)
           PopupMenuItem(
             value: e.key,
             child: Row(
               children: [
                 Icon(
-                    ref.read(_plSortProvider) == e.key
+                    ref.read(playlistSortProvider) == e.key
                         ? Icons.radio_button_checked
                         : Icons.radio_button_unchecked,
                     size: 18),
@@ -810,37 +712,33 @@ class _PlaylistsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lib = ref.watch(libraryProvider);
-    final q = ref.watch(_libQueryProvider);
-    final sort = ref.watch(_plSortProvider);
-    final playlists = _sortPlaylists(
+    final q = ref.watch(libraryQueryProvider);
+    final sort = ref.watch(playlistSortProvider);
+    final playlists = sortPlaylists(
       lib.playlists
           .where((p) => q.isEmpty || p.name.toLowerCase().contains(q))
           .toList(),
       sort,
     );
-    final smart = <(String, IconData, List<Track>)>[
-      ('Часто слушаю', Icons.local_fire_department,
-          lib.topTracks(limit: 50).map((e) => e.key).toList()),
-      ('Недавнее', Icons.history, lib.history),
-      ('Только лайки', Icons.favorite, lib.liked),
-    ].where((s) => q.isEmpty || s.$1.toLowerCase().contains(q)).toList();
+    final smart = buildSmartPlaylists(lib, q);
     final accent = Theme.of(context).colorScheme.primary;
 
     return ListView(
       children: [
         for (final s in smart)
-          if (s.$3.isNotEmpty)
+          if (s.tracks.isNotEmpty)
             ListTile(
               leading: CircleAvatar(
                 backgroundColor: accent.withValues(alpha: 0.18),
-                child: Icon(s.$2, color: accent, size: 20),
+                child: Icon(_smartIcon(s.kind), color: accent, size: 20),
               ),
-              title: Text(s.$1,
+              title: Text(s.title,
                   style: const TextStyle(fontWeight: FontWeight.w500)),
-              subtitle: Text('${s.$3.length} треков · авто',
+              subtitle: Text('${s.tracks.length} треков · авто',
                   style: TextStyle(color: AppColors.white45, fontSize: 12)),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => TrackListScreen(title: s.$1, tracks: s.$3),
+                builder: (_) =>
+                    TrackListScreen(title: s.title, tracks: s.tracks),
               )),
             ),
         const Divider(height: 8),
@@ -877,6 +775,7 @@ class _PlaylistsView extends ConsumerWidget {
   }
 
   void _playlistMenu(BuildContext context, WidgetRef ref, PlaylistX pl) {
+    final actions = LibraryActions(ref);
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface2,
@@ -901,13 +800,10 @@ class _PlaylistsView extends ConsumerWidget {
               title: const Text('Убрать дубликаты'),
               onTap: () async {
                 Navigator.pop(context);
-                final n =
-                    await ref.read(libraryProvider).removeDuplicates(pl.id);
+                final msg = await actions.removeDuplicates(pl.id);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(n == 0
-                          ? 'Дубликатов не найдено'
-                          : 'Удалено дубликатов: $n')));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(msg)));
                 }
               },
             ),
@@ -916,7 +812,7 @@ class _PlaylistsView extends ConsumerWidget {
               title: const Text('Экспорт в файл'),
               onTap: () {
                 Navigator.pop(context);
-                _exportPlaylist(pl);
+                actions.exportPlaylist(pl);
               },
             ),
             ListTile(
@@ -959,7 +855,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
         orElse: () => PlaylistX(id: widget.playlistId, name: 'Плейлист'));
     final downloads = ref.watch(downloadsProvider);
     final tracks =
-        pl.tracks.where((t) => _matchTrack(t, _q)).toList();
+        pl.tracks.where((t) => matchTrack(t, _q)).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -1083,11 +979,11 @@ class _QueueView extends ConsumerWidget {
                 final name = await _askName(context, 'Новый плейлист',
                     initial: 'Очередь');
                 if (name != null && name.isNotEmpty) {
-                  await ref.read(libraryProvider).importPlaylist(name, queue);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(
-                            'Сохранено: $name (${queue.length} треков)')));
+                  final msg =
+                      await LibraryActions(ref).saveQueueAsPlaylist(name, queue);
+                  if (context.mounted && msg != null) {
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(msg)));
                   }
                 }
               },
