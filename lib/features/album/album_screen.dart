@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/skin.dart';
 import '../../domain/models/album_result.dart';
 import '../../domain/models/track.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -33,25 +34,26 @@ class AlbumScreen extends ConsumerWidget {
     final lib = ref.watch(libraryProvider);
     final liked = lib.isAlbumLiked(album);
     final disliked = lib.isAlbumDisliked(album);
+    final t = SkinScope.of(context).tokens;
     return Scaffold(
       appBar: AppBar(
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            icon: Icon(disliked ? Icons.thumb_down : Icons.thumb_down_outlined,
-                color: disliked ? AppColors.warning : null),
+            icon: AppIcon(AppIcons.thumbDown,
+                color: disliked ? t.warning : t.textSecondary),
             tooltip: disliked ? 'Убрать дизлайк' : 'Не нравится',
             onPressed: () =>
                 ref.read(libraryProvider).toggleDislikeAlbum(album),
           ),
           IconButton(
-            icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
-                color: liked ? AppColors.danger : null),
+            icon: AppIcon(liked ? AppIcons.heartFilled : AppIcons.heart,
+                color: liked ? t.danger : t.textSecondary),
             tooltip: liked ? 'Убрать из избранного' : 'В избранное',
             onPressed: () => ref.read(libraryProvider).toggleLikeAlbum(album),
           ),
           IconButton(
-            icon: const Icon(Icons.download),
+            icon: AppIcon(AppIcons.download, color: t.textSecondary),
             tooltip: 'Скачать альбом',
             onPressed: () {
               final list = tracks.value;
@@ -64,7 +66,7 @@ class AlbumScreen extends ConsumerWidget {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.radio),
+            icon: AppIcon(AppIcons.radio, color: t.textSecondary),
             tooltip: l10n.albumRadioTooltip,
             onPressed: () {
               final list = tracks.value;
@@ -77,19 +79,20 @@ class AlbumScreen extends ConsumerWidget {
       ),
       bottomNavigationBar: const SafeArea(top: false, child: MiniPlayer()),
       body: tracks.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(
+            child: CircularProgressIndicator(color: t.accent)),
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text(l10n.loadErrorGeneric(e.toString()),
-                style: TextStyle(color: AppColors.white45)),
+                style: TextStyle(color: t.textSecondary)),
           ),
         ),
         data: (list) {
           if (list.isEmpty) {
             return Center(
               child: Text(l10n.albumTracksEmpty,
-                  style: TextStyle(color: AppColors.white45)),
+                  style: TextStyle(color: t.textSecondary)),
             );
           }
           return ListView.builder(

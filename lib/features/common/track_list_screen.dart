@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
 import '../../core/widgets/track_download_status.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/skin.dart';
 import '../../domain/models/track.dart';
 
 /// Универсальный экран со списком треков: статический список или загрузчик.
@@ -56,7 +57,7 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    final t = SkinScope.of(context).tokens;
     final tracks = _tracks;
     final downloads = ref.watch(downloadsProvider);
     return Scaffold(
@@ -65,7 +66,7 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
         actions: [
           if (tracks != null && tracks.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.download),
+              icon: AppIcon(AppIcons.download, color: t.textSecondary),
               tooltip: 'Скачать все треки',
               onPressed: downloads.playlistBusy
                   ? null
@@ -77,26 +78,26 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
         bottom: downloads.playlistBusy
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(3),
-                child:
-                    LinearProgressIndicator(value: downloads.playlistProgress),
+                child: LinearProgressIndicator(
+                    value: downloads.playlistProgress, color: t.accent),
               )
             : null,
       ),
       bottomNavigationBar: const SafeArea(top: false, child: MiniPlayer()),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: t.accent))
           : _error != null
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text('Ошибка: $_error',
-                        style: TextStyle(color: AppColors.white45)),
+                        style: TextStyle(color: t.textSecondary)),
                   ),
                 )
               : (tracks == null || tracks.isEmpty)
                   ? Center(
-                      child: Text('Пусто',
-                          style: TextStyle(color: AppColors.white45)))
+                      child:
+                          Text('Пусто', style: TextStyle(color: t.textSecondary)))
                   : Column(
                       children: [
                         Padding(
@@ -109,7 +110,8 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
                                   onPressed: () => playTrack(
                                       ref, context, tracks.first,
                                       queue: tracks),
-                                  icon: const Icon(Icons.play_arrow),
+                                  icon: AppIcon(AppIcons.play,
+                                      size: 18, color: t.accentOn),
                                   label: const Text('Слушать всё'),
                                 ),
                               ),
@@ -119,8 +121,9 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
                                     .read(playbackProvider)
                                     .startRadio(tracks.first, tracks),
                                 style: OutlinedButton.styleFrom(
-                                    foregroundColor: accent),
-                                icon: const Icon(Icons.radio),
+                                    foregroundColor: t.accent),
+                                icon: AppIcon(AppIcons.radio,
+                                    size: 18, color: t.accent),
                                 label: const Text('Радио'),
                               ),
                             ],

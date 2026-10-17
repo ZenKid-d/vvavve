@@ -6,11 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/widgets/artwork.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/service_badge.dart';
 import '../../core/widgets/track_card.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/skin.dart';
 import '../../domain/models/artist_profile.dart';
 import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
@@ -134,7 +135,8 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(l10n.loadErrorGeneric(e.toString()),
-                        style: TextStyle(color: AppColors.white45)),
+                        style: TextStyle(
+                            color: SkinScope.of(context).tokens.textSecondary)),
                   ),
                 ),
               ),
@@ -156,12 +158,13 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
     final albums = _groupAlbums(tracks);
     final following = ref.watch(libraryProvider).isFollowing(widget.artist);
 
+    final t = SkinScope.of(context).tokens;
     return CustomScrollView(
       slivers: [
         SliverAppBar(
           expandedHeight: 220,
           pinned: true,
-          backgroundColor: AppColors.background,
+          backgroundColor: t.background,
           leading: const _BackButton(),
           flexibleSpace: FlexibleSpaceBar(
             titlePadding: const EdgeInsetsDirectional.only(start: 56, bottom: 14),
@@ -189,7 +192,8 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
           SliverFillRemaining(
             child: Center(
               child: Text(l10n.artistTracksEmpty,
-                  style: TextStyle(color: AppColors.white45)),
+                  style: TextStyle(
+                      color: SkinScope.of(context).tokens.textSecondary)),
             ),
           )
         else ...[
@@ -230,7 +234,9 @@ class _BackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => IconButton(
-        icon: const Icon(Icons.arrow_back),
+        icon: AppIcon(AppIcons.back,
+            color: SkinScope.maybeOf(context)?.tokens.textPrimary ??
+                Colors.white),
         onPressed: () => Navigator.of(context).maybePop(),
       );
 }
@@ -285,7 +291,8 @@ class _Banner extends StatelessWidget {
               end: Alignment.bottomCenter,
               colors: [
                 Colors.black.withValues(alpha: 0.1),
-                AppColors.background,
+                SkinScope.maybeOf(context)?.tokens.background ??
+                    Colors.black,
               ],
             ),
           ),
@@ -338,7 +345,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    final t = SkinScope.of(context).tokens;
     final bio = profile?.bio;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -358,28 +365,32 @@ class _Header extends StatelessWidget {
                     Text(artist,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            fontSize: t.title.fontSize,
+                            fontWeight: FontWeight.w700,
+                            color: t.textPrimary)),
                     const SizedBox(height: 4),
                     Wrap(
                       spacing: 8,
                       children: [
                         Text(l10n.artistTracksCount(trackCount),
                             style: TextStyle(
-                                fontSize: 12.5, color: AppColors.white60)),
+                                fontSize: t.caption.fontSize,
+                                color: t.textSecondary)),
                         if (profile?.followers != null)
                           Text(l10n.artistFollowersCount(profile!.followers!),
                               style: TextStyle(
-                                  fontSize: 12.5, color: AppColors.white60)),
+                                  fontSize: t.caption.fontSize,
+                                  color: t.textSecondary)),
                       ],
                     ),
                     if (profile?.isRecordOwner ?? false) ...[
                       const SizedBox(height: 2),
                       Text(l10n.artistRecordOwnerNotice,
                           style: TextStyle(
-                              fontSize: 11,
+                              fontSize: t.micro.fontSize,
                               fontStyle: FontStyle.italic,
-                              color: AppColors.white45)),
+                              color: t.textTertiary)),
                     ],
                   ],
                 ),
@@ -396,7 +407,9 @@ class _Header extends StatelessWidget {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: 13, color: AppColors.white60, height: 1.35)),
+                    fontSize: t.caption.fontSize,
+                    color: t.textSecondary,
+                    height: 1.35)),
           ],
           const SizedBox(height: 14),
           Row(
@@ -405,22 +418,21 @@ class _Header extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: trackCount == 0 ? null : onPlayAll,
                   style: FilledButton.styleFrom(
-                      backgroundColor: accent, foregroundColor: Colors.black),
-                  icon: const Icon(Icons.play_arrow, size: 20),
+                      backgroundColor: t.accent,
+                      foregroundColor: t.accentOn),
+                  icon: AppIcon(AppIcons.play, size: 20, color: t.accentOn),
                   label: Text(l10n.artistPlayAll),
                 ),
               ),
               const SizedBox(width: 10),
               _RoundAction(
-                icon: Icons.radio,
+                icon: AppIcons.radio,
                 tooltip: l10n.artistRadioTooltip,
                 onTap: trackCount == 0 ? null : onRadio,
               ),
               const SizedBox(width: 8),
               _RoundAction(
-                icon: following
-                    ? Icons.notifications_active
-                    : Icons.notifications_none,
+                icon: AppIcons.bell,
                 tooltip:
                     following ? l10n.artistFollowingTooltip : l10n.artistFollowTooltip,
                 onTap: onToggleFollow,
@@ -442,23 +454,23 @@ class _RoundAction extends StatelessWidget {
     this.active = false,
   });
 
-  final IconData icon;
+  final AppIconData icon;
   final String tooltip;
   final VoidCallback? onTap;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    final t = SkinScope.of(context).tokens;
     return Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: active ? accent.withValues(alpha: 0.18) : AppColors.white06,
+        color: active ? t.accent.withValues(alpha: 0.18) : t.surfaceAlt,
       ),
       child: IconButton(
-        icon: Icon(icon, size: 20, color: active ? accent : AppColors.white60),
+        icon: AppIcon(icon, size: 20, color: active ? t.accent : t.textSecondary),
         tooltip: tooltip,
         onPressed: onTap,
       ),
@@ -503,13 +515,14 @@ class _AlbumTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = SkinScope.of(context).tokens;
     final seed = group.tracks.first;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Artwork(seed.artworkUrl, size: 52, seed: seed.uid, radius: 12),
+      leading: Artwork(seed.artworkUrl, size: 52, seed: seed.uid, radius: t.radiusMd),
       title: Text(group.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(l10n.artistTracksCount(group.tracks.length),
-          style: TextStyle(color: AppColors.white45, fontSize: 12)),
+          style: TextStyle(color: t.textSecondary, fontSize: t.caption.fontSize)),
       onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => AlbumScreen(seed: seed))),
     );

@@ -113,6 +113,7 @@ class AppIcons {
   static const heart = _Icon.heart;
   static const heartFilled = _Icon.heartFilled;
   static const thumbDown = _Icon.thumbDown;
+  static const bell = _Icon.bell;
 
   static const queue = _Icon.queue;
   static const lyrics = _Icon.lyrics;
@@ -183,6 +184,7 @@ enum _Icon implements AppIconData {
   heart(IconData(0x2661, fontFamily: _sysFont), 22), // ♡
   heartFilled(IconData(0x2665, fontFamily: _sysFont), 22), // ♥
   thumbDown(IconData(0x261F, fontFamily: _sysFont), 20), // ☟
+  bell(IconData(0x2606, fontFamily: _sysFont), 20), // ☆ — подписка на артиста
 
   // Музыка.
   queue(IconData(0x2261, fontFamily: _sysFont), 20), // ≡
