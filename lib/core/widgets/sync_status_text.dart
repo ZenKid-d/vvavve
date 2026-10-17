@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../sync/sync_service.dart' show SyncState;
+import '../../design/skin.dart';
 import '../providers.dart' show themeSettingsProvider;
 import '../theme/accent_provider.dart';
-import '../theme/app_colors.dart';
 
 /// Строка статуса синхронизации с переливом в цветах акцента.
 ///
@@ -95,11 +95,13 @@ class _SyncStatusTextState extends ConsumerState<SyncStatusText>
     final accent = ref.watch(effectiveAccentProvider);
     final reduceMotion = !ref.watch(themeSettingsProvider).spin;
 
+    final skinT = SkinScope.maybeOf(context)?.tokens;
     // Ошибка не должна выглядеть нарядно: там нужен нейтральный цвет, а не
     // акцент, иначе «облако недоступно» читается как что-то хорошее.
     final muted = widget.state == SyncState.error
-        ? AppColors.white45
-        : Color.lerp(AppColors.white45, accent, 0.55)!;
+        ? (skinT?.textTertiary ?? Colors.white54)
+        : Color.lerp(
+            skinT?.textTertiary ?? Colors.white54, accent, 0.55)!;
 
     final style = TextStyle(fontSize: widget.fontSize, color: muted);
 

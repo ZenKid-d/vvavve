@@ -3,9 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
 import '../../core/storage.dart';
-import '../../core/theme/app_colors.dart';
+import '../../design/icons/app_icons.dart';
+import '../common/skin_tokens.dart';
 
 /// Экран «Управление памятью»: размер загрузок и кэша, очистка.
+///
+/// Скин берём через [skinOf], а не SkinScope.of: экран может открыться
+/// вне оболочки (тест, превью), и падать на этом нельзя — там по умолчанию
+/// рисуем iOS-вариант.
 class StorageScreen extends ConsumerStatefulWidget {
   const StorageScreen({super.key});
 
@@ -53,21 +58,35 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
   Future<void> _removeDownloads() async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface2,
-        title: const Text('Удалить все загрузки?'),
-        content: const Text(
+      builder: (ctx) {
+        final t = skinOf(ctx).tokens;
+        return AlertDialog(
+          // Диалоги не подкрашиваются скином сами — поверхность берём из
+          // токенов, иначе в iPod всплыла бы светлая Material-подложка.
+          backgroundColor: t.surface,
+          title: Text('Удалить все загрузки?',
+              style: t.headline.copyWith(color: t.textPrimary)),
+          content: Text(
             'Скачанные треки станут недоступны офлайн. Библиотека и плейлисты '
-            'останутся.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
+            'останутся.',
+            style: t.body.copyWith(color: t.textSecondary),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text('Отмена',
+                    style: t.caption.copyWith(color: t.textSecondary))),
+            FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Удалить')),
-        ],
-      ),
+              style: FilledButton.styleFrom(
+                backgroundColor: t.accent,
+                foregroundColor: t.accentOn,
+              ),
+              child: const Text('Удалить'),
+            ),
+          ],
+        );
+      },
     );
     if (ok != true) return;
     setState(() => _busy = true);
@@ -82,6 +101,7 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = skinOf(context).tokens;
     final downloads = ref.watch(downloadsProvider);
     final count = downloads.downloads.length;
     final total = (_downloadsBytes != null && _cacheBytes != null)
@@ -89,35 +109,49 @@ class _StorageScreenState extends ConsumerState<StorageScreen> {
         : null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Управление памятью')),
+      backgroundColor: t.background,
+      appBar: AppBar(
+        backgroundColor: t.background,
+        foregroundColor: t.textPrimary,
+        title: Text(
+          'Управление памятью',
+          style: t.headline.copyWith(color: t.textPrimary),
+        ),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(t.space16),
         children: [
           _TotalCard(total: total),
-          const SizedBox(height: 16),
+          SizedBox(height: t.space16),
           _StorageTile(
-              icon: Icons.download_done,
-              title: 'Скачанные треки',
-              subtitle: '$count ${_plural(count)}',
-              value: _downloadsBytes,
-              actionLabel: 'Удалить всё',
-              onAction: (_busy || count == 0) ? null : _removeDownloads,
-            ),
-          const Divider(height: 24),
+            icon: AppIcons.downloadDone,
+            title: 'Скачанные треки',
+            subtitle: '$count ${_plural(count)}',
+            value: _downloadsBytes,
+            actionLabel: 'Удалить всё',
+            onAction: (_busy || count == 0) ? null : _removeDownloads,
+          ),
+          // Разделитель — из токенов: hairline Divider Material не совпадает
+          // с толщиной/цветом линий скина.
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: t.space12),
+            child: Container(height: 1, color: t.separator),
+          ),
           _StorageTile(
-            icon: Icons.image_outlined,
+            icon: AppIcons.download,
             title: 'Кэш (обложки и т.п.)',
             subtitle: 'Пересоздаётся при просмотре',
             value: _cacheBytes,
             actionLabel: 'Очистить',
             onAction: _busy ? null : _clearCache,
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: t.space24),
           Center(
             child: TextButton.icon(
               onPressed: _busy ? null : _recompute,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Пересчитать'),
+              icon: AppIcon(AppIcons.sync, size: 18, color: t.textSecondary),
+              label: Text('Пересчитать',
+                  style: t.caption.copyWith(color: t.textSecondary)),
             ),
           ),
         ],
@@ -141,27 +175,28 @@ class _TotalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    final t = skinOf(context).tokens;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      padding: EdgeInsets.symmetric(horizontal: t.space16, vertical: t.space24),
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withValues(alpha: 0.35)),
+        // Пятнистый цвет подложки — тот же акцент, что у скина; заливка
+        // полупрозрачным акцентом остаётся валидной в монохромном iPod.
+        color: t.accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(t.radiusLg),
+        border: Border.all(color: t.accent.withValues(alpha: 0.35)),
       ),
       child: Row(
         children: [
-          Icon(Icons.sd_storage_outlined, color: accent, size: 30),
-          const SizedBox(width: 16),
+          AppIcon(AppIcons.storage, color: t.accent, size: 30),
+          SizedBox(width: t.space16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Занято приложением',
-                  style: TextStyle(fontSize: 12, color: AppColors.white60)),
-              const SizedBox(height: 4),
+                  style: t.micro.copyWith(color: t.textSecondary)),
+              SizedBox(height: t.space4),
               Text(total == null ? '…' : Storage.fmt(total!),
-                  style: const TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w700)),
+                  style: t.title.copyWith(color: t.textPrimary)),
             ],
           ),
         ],
@@ -180,7 +215,7 @@ class _StorageTile extends StatelessWidget {
     required this.onAction,
   });
 
-  final IconData icon;
+  final AppIconData icon;
   final String title;
   final String subtitle;
   final int? value;
@@ -189,10 +224,11 @@ class _StorageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = skinOf(context).tokens;
     return Row(
       children: [
-        Icon(icon, color: AppColors.white60),
-        const SizedBox(width: 14),
+        AppIcon(icon, color: t.textSecondary),
+        SizedBox(width: t.space12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,21 +237,29 @@ class _StorageTile extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(title,
-                        style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w500)),
+                        style: t.body.copyWith(
+                          color: t.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        )),
                   ),
                   Text(value == null ? '…' : Storage.fmt(value!),
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                      style: t.body.copyWith(
+                        color: t.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      )),
                 ],
               ),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: TextStyle(fontSize: 11.5, color: AppColors.white45)),
+              SizedBox(height: t.space2),
+              Text(subtitle, style: t.micro.copyWith(color: t.textTertiary)),
             ],
           ),
         ),
-        const SizedBox(width: 8),
-        TextButton(onPressed: onAction, child: Text(actionLabel)),
+        SizedBox(width: t.space8),
+        TextButton(
+          onPressed: onAction,
+          child: Text(actionLabel,
+              style: t.caption.copyWith(color: t.accent)),
+        ),
       ],
     );
   }

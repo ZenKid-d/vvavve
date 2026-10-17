@@ -11,6 +11,7 @@ import '../../core/widgets/karaoke_backdrop.dart';
 import '../../core/widgets/karaoke_line.dart';
 import '../../data/lyrics_service.dart';
 import '../../data/visualizer_session.dart';
+import '../../design/icons/app_icons.dart';
 import '../../domain/models/track.dart';
 
 /// Экран текста песни: полноэкранный. Если есть синхронный текст (LRC) —
@@ -234,14 +235,14 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
   Widget _topBar() => Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down),
+            icon: const AppIcon(AppIcons.chevronDown, color: Colors.white70),
             onPressed: () => Navigator.pop(context),
           ),
           const Spacer(),
           if (_lines.isNotEmpty)
             IconButton(
               tooltip: 'Перевод строки',
-              icon: Icon(Icons.translate,
+              icon: AppIcon(AppIcons.lyrics,
                   size: 20,
                   color: _translate ? Colors.white : Colors.white38),
               onPressed: () => setState(() => _translate = !_translate),
@@ -267,7 +268,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
               style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5))),
           IconButton(
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.remove, size: 18, color: Colors.white70),
+            icon: const AppIcon(AppIcons.minus, size: 18, color: Colors.white70),
             onPressed: () => setState(() => _offsetMs -= 300),
           ),
           SizedBox(
@@ -278,7 +279,7 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.add, size: 18, color: Colors.white70),
+            icon: const AppIcon(AppIcons.plus, size: 18, color: Colors.white70),
             onPressed: () => setState(() => _offsetMs += 300),
           ),
           if (_offsetMs != 0)
@@ -441,7 +442,8 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
               children: [
                 IconButton(
                     iconSize: 32,
-                    icon: const Icon(Icons.skip_previous),
+                    icon: const AppIcon(AppIcons.skipPrev,
+                        size: 26, color: Colors.white),
                     onPressed: pc.previous),
                 const SizedBox(width: 12),
                 GestureDetector(
@@ -451,14 +453,15 @@ class _LyricsScreenState extends ConsumerState<LyricsScreen> {
                     height: 58,
                     decoration:
                         BoxDecoration(color: accent, shape: BoxShape.circle),
-                    child: Icon(pc.isPlaying ? Icons.pause : Icons.play_arrow,
+                    child: AppIcon(pc.isPlaying ? AppIcons.pause : AppIcons.play,
                         size: 30, color: Colors.black),
                   ),
                 ),
                 const SizedBox(width: 12),
                 IconButton(
                     iconSize: 32,
-                    icon: const Icon(Icons.skip_next),
+                    icon: const AppIcon(AppIcons.skipNext,
+                        size: 26, color: Colors.white),
                     onPressed: pc.next),
               ],
             ),

@@ -308,10 +308,11 @@ void main() {
       await pumpMini(tester, _track,
           router: shellRouter(), playback: playback);
 
-      // Кнопка — единственная иконка внутри карточки.
+      // Кнопка play — последняя иконка в ряду (первая — нота в заглушке
+      // обложки, она тоже AppIcon после перевода artwork на скин-иконки).
       await tester.tap(find.descendant(
         of: find.byType(IosMiniPlayer),
-        matching: find.byType(AppIcon),
+        matching: find.byType(AppIcon).last,
       ));
       await tester.pump();
       expect(playback.toggles, 1);

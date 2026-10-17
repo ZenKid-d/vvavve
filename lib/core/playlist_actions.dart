@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../design/icons/app_icons.dart';
+import '../design/skin.dart';
+import '../design/skin_registry.dart';
 import '../domain/models/track.dart';
 import 'providers.dart';
-import 'theme/app_colors.dart';
 
 /// Общий bottom-sheet «Добавить в плейлист». Раньше та же логика была
 /// продублирована в [showTrackMenu] (lib/core/track_menu.dart) и на экране
@@ -19,20 +21,25 @@ Future<void> showAddToPlaylistSheet(
   Track track,
 ) async {
   final lib = ref.read(libraryProvider);
+  // Модальное окно живёт вне дерева экрана — скин берём до открытия.
+  final t = SkinScope.maybeOf(context)?.tokens ?? skinFor(SkinId.ios).tokens;
   await showModalBottomSheet(
     context: context,
-    backgroundColor: AppColors.surface1,
+    backgroundColor: t.surface,
     builder: (sheetCtx) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Text('Добавить в плейлист',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                style: TextStyle(
+                    fontSize: t.body.fontSize,
+                    fontWeight: FontWeight.w600,
+                    color: t.textPrimary)),
           ),
           ListTile(
-            leading: const Icon(Icons.add),
+            leading: AppIcon(AppIcons.plus, size: 20, color: t.accent),
             title: const Text('Новый плейлист'),
             onTap: () async {
               Navigator.pop(sheetCtx);
@@ -50,15 +57,17 @@ Future<void> showAddToPlaylistSheet(
               padding: const EdgeInsets.all(16),
               child: Text(
                 'Плейлистов пока нет — создайте первый.',
-                style: TextStyle(color: AppColors.white45),
+                style: TextStyle(color: t.textTertiary),
               ),
             ),
           for (final pl in lib.playlists)
             ListTile(
-              leading: const Icon(Icons.queue_music),
-              title: Text(pl.name),
+              leading:
+                  AppIcon(AppIcons.queue, size: 20, color: t.textSecondary),
+              title: Text(pl.name, style: TextStyle(color: t.textPrimary)),
               subtitle: Text('${pl.tracks.length} треков',
-                  style: TextStyle(color: AppColors.white45, fontSize: 12)),
+                  style: TextStyle(
+                      color: t.textTertiary, fontSize: t.caption.fontSize)),
               onTap: () {
                 lib.addToPlaylist(pl.id, track);
                 Navigator.pop(sheetCtx);
@@ -73,10 +82,11 @@ Future<void> showAddToPlaylistSheet(
 
 Future<String?> _askPlaylistName(BuildContext context) {
   final c = TextEditingController();
+  final t = SkinScope.maybeOf(context)?.tokens ?? skinFor(SkinId.ios).tokens;
   return showDialog<String>(
     context: context,
     builder: (_) => AlertDialog(
-      backgroundColor: AppColors.surface2,
+      backgroundColor: t.surfaceAlt,
       title: const Text('Новый плейлист'),
       content: TextField(
           controller: c,

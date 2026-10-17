@@ -101,6 +101,7 @@ class AppIcons {
   static const close = _Icon.close;
   static const more = _Icon.more;
   static const plus = _Icon.plus;
+  static const minus = _Icon.minus;
   static const check = _Icon.check;
   static const chevronRight = _Icon.chevronRight;
   static const chevronDown = _Icon.chevronDown;
@@ -170,6 +171,7 @@ enum _Icon implements AppIconData {
   close(IconData(0x2715, fontFamily: _sysFont), 20), // ✕
   more(IconData(0x22EF, fontFamily: _sysFont), 20), // ⋯
   plus(IconData(0x002B, fontFamily: _sysFont), 20), // +
+  minus(IconData(0x2212, fontFamily: _sysFont), 20), // −
   check(IconData(0x2713, fontFamily: _sysFont), 18), // ✓
   chevronRight(IconData(0x203A, fontFamily: _sysFont), 20), // ›
   chevronDown(IconData(0x2304, fontFamily: _sysFont), 20), // ⌄

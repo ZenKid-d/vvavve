@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../design/icons/app_icons.dart';
+import '../design/skin.dart';
+import '../design/skin_registry.dart';
 import 'providers.dart';
-import 'theme/app_colors.dart';
 import 'widgets/artwork.dart';
 import '../domain/models/album_result.dart';
 import '../features/album/album_screen.dart';
@@ -11,26 +13,28 @@ import '../features/album/album_screen.dart';
 /// открыть / лайк / дизлайк / скачать все треки альбома.
 Future<void> showAlbumMenu(
     BuildContext context, WidgetRef ref, AlbumResult album) {
+  // Модальное окно живёт вне дерева экрана — скин берём до открытия.
+  final t = SkinScope.maybeOf(context)?.tokens ?? skinFor(SkinId.ios).tokens;
   return showModalBottomSheet(
     context: context,
-    backgroundColor: AppColors.surface1,
+    backgroundColor: t.surface,
     builder: (sheetCtx) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
             leading: Artwork(album.artworkUrl,
-                size: 44, seed: album.uid, radius: 10),
+                size: 44, seed: album.uid, radius: t.radiusMd),
             title: Text(album.title,
                 maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(album.artist,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: AppColors.white45)),
+                style: TextStyle(color: t.textTertiary)),
           ),
-          const Divider(height: 1),
+          Divider(height: 1, color: t.separator),
           ListTile(
-            leading: const Icon(Icons.album),
+            leading: AppIcon(AppIcons.library, size: 20, color: t.textSecondary),
             title: const Text('Открыть альбом'),
             onTap: () {
               Navigator.pop(sheetCtx);
@@ -41,8 +45,8 @@ Future<void> showAlbumMenu(
           Consumer(builder: (_, r, __) {
             final liked = r.watch(libraryProvider).isAlbumLiked(album);
             return ListTile(
-              leading: Icon(liked ? Icons.favorite : Icons.favorite_border,
-                  color: liked ? AppColors.danger : null),
+              leading: AppIcon(liked ? AppIcons.heartFilled : AppIcons.heart,
+                  size: 20, color: liked ? t.danger : t.textSecondary),
               title: Text(liked ? 'Убрать из избранного' : 'В избранное'),
               onTap: () {
                 r.read(libraryProvider).toggleLikeAlbum(album);
@@ -53,9 +57,8 @@ Future<void> showAlbumMenu(
           Consumer(builder: (_, r, __) {
             final disliked = r.watch(libraryProvider).isAlbumDisliked(album);
             return ListTile(
-              leading: Icon(
-                  disliked ? Icons.thumb_down : Icons.thumb_down_outlined,
-                  color: disliked ? AppColors.warning : null),
+              leading: AppIcon(AppIcons.thumbDown,
+                  size: 20, color: disliked ? t.warning : t.textSecondary),
               title: Text(disliked ? 'Убрать дизлайк' : 'Не нравится'),
               onTap: () {
                 r.read(libraryProvider).toggleDislikeAlbum(album);
@@ -64,7 +67,7 @@ Future<void> showAlbumMenu(
             );
           }),
           ListTile(
-            leading: const Icon(Icons.download),
+            leading: AppIcon(AppIcons.download, size: 20, color: t.textSecondary),
             title: const Text('Скачать альбом'),
             onTap: () {
               Navigator.pop(sheetCtx);

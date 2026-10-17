@@ -11,6 +11,8 @@ import '../../core/update_flow.dart';
 import '../../core/widgets/app_header.dart';
 import '../../design/icons/app_icons.dart';
 import '../../design/skin.dart';
+import '../common/skin_tokens.dart';
+import '../common/track_row.dart';
 import 'settings_controller.dart'
     show SettingsCopy, UpdateAction, updateTile;
 
@@ -75,26 +77,28 @@ class SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = SkinScope.of(context).tokens;
+    // Токены через skinOf: эти примитивы рисуются в обоих скинах, а контекст
+    // может оказаться вне SkinScope (тест, превью) — там берём iOS по умолчанию.
+    final t = skinOf(context).tokens;
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      padding: EdgeInsets.only(top: t.space16, bottom: t.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: TextStyle(
-              fontSize: 14,
+            // Кеглей в скин-слое быть не должно — берём шаг шкалы скина.
+            style: t.caption.copyWith(
               fontWeight: FontWeight.w600,
               color: t.textPrimary,
             ),
           ),
           if (subtitle != null)
             Padding(
-              padding: const EdgeInsets.only(top: 2),
+              padding: EdgeInsets.only(top: t.space2),
               child: Text(
                 subtitle!,
-                style: TextStyle(fontSize: 11, color: t.textTertiary),
+                style: t.micro.copyWith(color: t.textTertiary),
               ),
             ),
         ],
@@ -114,19 +118,22 @@ class SettingsNote extends StatelessWidget {
   const SettingsNote(this.text, {super.key});
   final String text;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 11,
-            color: SkinScope.of(context).tokens.textTertiary,
-          ),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final t = skinOf(context).tokens;
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: t.space4),
+      child: Text(
+        text,
+        style: t.micro.copyWith(color: t.textTertiary),
+      ),
+    );
+  }
 }
 
 /// Строка-действие: текст слева, стрелка справа.
+///
+/// Рисуется общим [SkinMenuRow], а не [ListTile]: у ListTile свои цвета
+/// Material-темы, и в iPod-скине строка не стала бы инвертированным блоком.
 class SettingsActionRow extends StatelessWidget {
   const SettingsActionRow({
     super.key,
@@ -140,44 +147,41 @@ class SettingsActionRow extends StatelessWidget {
 
   final String title;
   final String? subtitle;
-  final Widget? leading;
+
+  /// Иконка из [AppIcons] — не готовый [AppIcon]: виджет строки сам решает,
+  /// каким кеглем и цветом рисовать глиф в каждом скине.
+  final AppIconData? leading;
   final Widget? trailing;
   final VoidCallback? onTap;
+
+  /// «Активный» пункт только в iPod рисуется инверсией (цветом его не
+  /// выразить); в iOS скин игнорирует пометку.
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    final t = SkinScope.of(context).tokens;
-    return ListTile(
-      leading: leading != null
-          ? SizedBox(width: 24, height: 24, child: leading)
-          : null,
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-          color: active ? t.accent : t.textPrimary,
-          fontSize: 14,
-        ),
-      ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle!,
-              style: TextStyle(fontSize: 11.5, color: t.textTertiary),
-            )
-          : null,
+    final t = skinOf(context).tokens;
+    return SkinMenuRow(
+      title: title,
+      subtitle: subtitle,
+      leading: leading,
+      // Шеврон рисуем сами, а не полагаемся на авто-шеврон IpodListRow: в
+      // iOS-скине строка без trailing осталась бы «тупиком» без успеха.
       trailing: trailing ??
           (onTap != null
-              ? Icon(Icons.chevron_right, size: 18, color: t.textTertiary)
+              ? AppIcon(AppIcons.chevronRight, size: 18, color: t.textTertiary)
               : null),
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      dense: true,
+      selected: active,
     );
   }
 }
 
 /// Переключатель в строке.
+///
+/// Собственный [Switch] в токенной строке вместо [SwitchListTile]: у Material
+/// плитки свои цвета активного состояния, и в монохромном iPod тумблер
+/// подсветился бы «чужим» акцентом.
 class SettingsSwitchRow extends StatelessWidget {
   const SettingsSwitchRow({
     super.key,
@@ -192,34 +196,23 @@ class SettingsSwitchRow extends StatelessWidget {
   final String? subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
-  final Widget? leading;
+  final AppIconData? leading;
 
   @override
-  Widget build(BuildContext context) => SwitchListTile(
+  Widget build(BuildContext context) {
+    final t = skinOf(context).tokens;
+    return SkinMenuRow(
+      title: title,
+      subtitle: subtitle,
+      leading: leading,
+      onTap: () => onChanged(!value),
+      trailing: Switch(
         value: value,
         onChanged: onChanged,
-        title: Text(
-          title,
-          style: TextStyle(
-            fontSize: 14,
-            color: SkinScope.of(context).tokens.textPrimary,
-          ),
-        ),
-        subtitle: subtitle != null
-            ? Text(
-                subtitle!,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: SkinScope.of(context).tokens.textTertiary,
-                ),
-              )
-            : null,
-        secondary: leading != null
-            ? SizedBox(width: 24, height: 24, child: leading)
-            : null,
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      );
+        activeThumbColor: t.accent,
+      ),
+    );
+  }
 }
 
 /// Поле токена: текстовая строка в рамке.
@@ -240,24 +233,29 @@ class SettingsTokenField extends StatelessWidget {
   final Color filledColor;
 
   @override
-  Widget build(BuildContext context) => TextField(
-        controller: controller,
-        obscureText: obscureText,
-        readOnly: readOnly,
-        decoration: InputDecoration(
-          hintText: hintText ?? '',
-          filled: true,
-          fillColor: filledColor,
-          border: OutlineInputBorder(
-            borderRadius:
-                BorderRadius.circular(SkinScope.of(context).tokens.radiusMd),
-            borderSide: BorderSide.none,
-          ),
-          isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  Widget build(BuildContext context) {
+    final t = skinOf(context).tokens;
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      readOnly: readOnly,
+      // Текст в поле — из шкалы скина: системный кегль Material в iPod
+      // выбивался бы из «LCD»-типографики.
+      style: t.body.copyWith(color: t.textPrimary),
+      decoration: InputDecoration(
+        hintText: hintText ?? '',
+        hintStyle: t.body.copyWith(color: t.textTertiary),
+        filled: true,
+        fillColor: filledColor,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(t.radiusMd),
+          borderSide: BorderSide.none,
         ),
-      );
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+    );
+  }
 }
 
 /// Кнопка действия.
@@ -306,7 +304,7 @@ class SettingsUpdateBlock extends ConsumerWidget {
         SettingsActionRow(
           title: tile.title,
           subtitle: tile.subtitle,
-          leading: AppIcon(AppIcons.systemUpdate, size: 20, color: t.accent),
+          leading: AppIcons.systemUpdate,
           trailing: tile.action == UpdateAction.none
               ? (tile.busy
                   ? SizedBox(

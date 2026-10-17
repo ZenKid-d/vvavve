@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/diagnostics.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
+import '../../design/icons/app_icons.dart';
+import '../../design/tokens/design_tokens.dart';
+import '../../design/widgets/blocks.dart';
+import '../common/skin_tokens.dart';
 
 /// Внутренний журнал диагностики: последние события источников (поиск, резолв
 /// потока, троттлинг, обновление ключей). Помогает понять в поле, почему трек
@@ -24,16 +27,23 @@ class DiagnosticsScreen extends ConsumerWidget {
   }
 
   Widget _build(BuildContext context, Diagnostics diag) {
+    final t = skinOf(context).tokens;
     // Новые сверху.
     final entries = diag.entries.reversed.toList();
 
     return Scaffold(
+      backgroundColor: t.background,
       appBar: AppBar(
-        title: const Text('Диагностика'),
+        backgroundColor: t.background,
+        foregroundColor: t.textPrimary,
+        title:
+            Text('Диагностика', style: t.headline.copyWith(color: t.textPrimary)),
         actions: [
+          // «Копировать» у AppIcons нет — рисуем share-глиф (стрелка вверх из
+          // коробки): жест тот же, а Material-иконка в скин-слое запрещена.
           IconButton(
             tooltip: 'Скопировать журнал',
-            icon: const Icon(Icons.copy_all),
+            icon: AppIcon(AppIcons.share, size: 20, color: t.textSecondary),
             onPressed: entries.isEmpty
                 ? null
                 : () async {
@@ -48,30 +58,25 @@ class DiagnosticsScreen extends ConsumerWidget {
           ),
           IconButton(
             tooltip: 'Очистить',
-            icon: const Icon(Icons.delete_outline),
+            icon: AppIcon(AppIcons.delete, size: 20, color: t.textSecondary),
             onPressed: entries.isEmpty ? null : diag.clear,
           ),
         ],
       ),
       body: entries.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Text(
-                  'Пока пусто. Здесь появятся события источников — ошибки '
-                  'поиска, недоступные потоки, троттлинг YouTube и т.п. '
-                  'Если что-то не играет, зайди сюда и скопируй журнал.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.white45),
-                ),
-              ),
-            )
+          ? EmptyState(
+              tokens: t,
+              icon: AppIcons.systemUpdate,
+              title: 'Пока пусто',
+              subtitle: 'Здесь появятся события источников — ошибки поиска, '
+                  'недоступные потоки, троттлинг YouTube и т.п. Если что-то не '
+                  'играет, зайди сюда и скопируй журнал.')
           : ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: EdgeInsets.symmetric(vertical: t.space8),
               itemCount: entries.length,
-              separatorBuilder: (_, __) => Divider(
+              separatorBuilder: (_, __) => Container(
                 height: 1,
-                color: AppColors.white06,
+                color: t.separator,
               ),
               itemBuilder: (_, i) => _EntryTile(entries[i]),
             ),
@@ -84,24 +89,50 @@ class _EntryTile extends StatelessWidget {
 
   final DiagEntry entry;
 
-  Color get _color => switch (entry.level) {
-        DiagLevel.info => AppColors.white45,
-        DiagLevel.warn => AppColors.warning,
-        DiagLevel.error => AppColors.youtube,
+  /// Уровень важности передаётся цветом из токенов, а не AppColors: в
+  /// монохромном iPod все три уровня стали бы тонами серого — и это осознанно.
+  Color _color(DesignTokens t) => switch (entry.level) {
+        DiagLevel.info => t.textTertiary,
+        DiagLevel.warn => t.warning,
+        DiagLevel.error => t.danger,
       };
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      leading: Icon(Icons.circle, size: 10, color: _color),
-      title: Text(
-        entry.message,
-        style: const TextStyle(fontSize: 12.5),
-      ),
-      subtitle: Text(
-        '${entry.clock} · ${entry.tag}',
-        style: TextStyle(color: AppColors.white45, fontSize: 11),
+    final t = skinOf(context).tokens;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: t.space16, vertical: t.space4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Точка уровня — нарисованный кружок, а не Icon(Icons.circle):
+          // заполненный глиф радиусом 10 не тянет иконку.
+          Padding(
+            padding: EdgeInsets.only(top: t.space4),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: _color(t),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          SizedBox(width: t.space12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(entry.message,
+                    style: t.body.copyWith(color: t.textPrimary)),
+                SizedBox(height: t.space2),
+                Text('${entry.clock} · ${entry.tag}',
+                    style: t.micro.copyWith(color: t.textTertiary)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

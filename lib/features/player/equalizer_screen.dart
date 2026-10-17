@@ -5,7 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
+import '../../design/icons/app_icons.dart';
+import '../common/skin_tokens.dart';
 
 /// Встроенные пресеты как 5-точечные профили (дБ), интерполируются под число
 /// полос устройства.
@@ -67,20 +68,32 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (_) {
+        final t = skinOf(context).tokens;
         final c = TextEditingController();
         return AlertDialog(
-          backgroundColor: AppColors.surface2,
-          title: const Text('Сохранить пресет'),
+          // Поверхность диалога из токенов: светлая Material-подложка на
+          // графите iPod читалась бы чужеродным элементом.
+          backgroundColor: t.surface,
+          title: Text('Сохранить пресет',
+              style: t.headline.copyWith(color: t.textPrimary)),
           content: TextField(
               controller: c,
               autofocus: true,
-              decoration: const InputDecoration(hintText: 'Название')),
+              style: t.body.copyWith(color: t.textPrimary),
+              decoration: InputDecoration(
+                  hintStyle: t.body.copyWith(color: t.textTertiary),
+                  hintText: 'Название')),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Отмена')),
+                child: Text('Отмена',
+                    style: t.caption.copyWith(color: t.textSecondary))),
             FilledButton(
                 onPressed: () => Navigator.pop(context, c.text.trim()),
+                style: FilledButton.styleFrom(
+                  backgroundColor: t.accent,
+                  foregroundColor: t.accentOn,
+                ),
                 child: const Text('Сохранить')),
           ],
         );
@@ -104,36 +117,66 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    final t = skinOf(context).tokens;
     return Scaffold(
-      appBar: AppBar(title: const Text('Эквалайзер')),
+      backgroundColor: t.background,
+      appBar: AppBar(
+        backgroundColor: t.background,
+        foregroundColor: t.textPrimary,
+        title: Text('Эквалайзер', style: t.headline.copyWith(color: t.textPrimary)),
+      ),
       body: Column(
         children: [
-          SwitchListTile(
-            value: _enabled,
-            activeThumbColor: accent,
-            title: const Text('Включить эквалайзер'),
-            onChanged: (v) {
-              _eq.setEnabled(v);
-              setState(() => _enabled = v);
+          // Своя строка с тумблером вместо SwitchListTile: цвет включённого
+          // состояния — акцент скина, в iPod он монохромный. Строка кликабельна
+          // целиком, а не только по самому переключателю.
+          InkWell(
+            onTap: () {
+              _eq.setEnabled(!_enabled);
+              setState(() => _enabled = !_enabled);
             },
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: t.space16,
+                vertical: t.space12,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('Включить эквалайзер',
+                        style: t.body.copyWith(color: t.textPrimary)),
+                  ),
+                  Switch(
+                    value: _enabled,
+                    onChanged: (v) {
+                      _eq.setEnabled(v);
+                      setState(() => _enabled = v);
+                    },
+                    activeThumbColor: t.accent,
+                  ),
+                ],
+              ),
+            ),
           ),
-          const Divider(height: 1),
+          // Разделитель — из токенов, а не Divider: толщина и совпадают с
+          // линиями списков скина.
+          Container(height: 1, color: t.separator),
           Expanded(
             child: FutureBuilder<AndroidEqualizerParameters>(
               future: _eq.parameters,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return Center(
+                      child: CircularProgressIndicator(color: t.accent));
                 }
                 if (!snap.hasData) {
                   return Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(24),
+                      padding: EdgeInsets.all(t.space24),
                       child: Text(
                         'Эквалайзер недоступен (запустите трек и откройте снова).',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.white45),
+                        style: t.body.copyWith(color: t.textTertiary),
                       ),
                     ),
                   );
@@ -141,19 +184,20 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
                 final params = snap.data!;
                 final custom = _customPresets;
                 return ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: EdgeInsets.symmetric(vertical: t.space8),
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      padding: EdgeInsets.fromLTRB(t.space16, t.space4,
+                          t.space16, t.space8),
                       child: Text('Пресеты',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.white60)),
+                          style: t.caption.copyWith(color: t.textSecondary)),
                     ),
                     SizedBox(
                       height: 38,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: t.space12),
                         children: [
                           for (final e in _builtinPresets.entries)
                             _PresetChip(
@@ -168,23 +212,32 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
                               onLong: () => _deleteCustom(e.key),
                             ),
                           Padding(
-                            padding: const EdgeInsets.only(left: 4),
+                            padding: EdgeInsets.only(left: t.space4),
                             child: ActionChip(
-                              avatar: const Icon(Icons.add, size: 16),
-                              label: const Text('Сохранить'),
+                              avatar: AppIcon(
+                                AppIcons.plus,
+                                size: 16,
+                                color: t.textSecondary,
+                              ),
+                              label: Text('Сохранить',
+                                  style: t.caption
+                                      .copyWith(color: t.textSecondary)),
                               onPressed: () => _saveCurrent(params),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const Divider(height: 18),
+                    Container(
+                      height: 1,
+                      color: t.separator,
+                      margin: EdgeInsets.symmetric(vertical: t.space8),
+                    ),
                     for (final band in params.bands)
                       _BandRow(
                         band: band,
                         min: params.minDecibels,
                         max: params.maxDecibels,
-                        accent: accent,
                       ),
                   ],
                 );
@@ -211,16 +264,19 @@ class _PresetChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+    final t = skinOf(context).tokens;
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
+      padding: EdgeInsets.only(right: t.space8),
       child: GestureDetector(
         onLongPress: onLong,
         child: ActionChip(
+          // Свои пресеты помечаем «плюс-звёздой» (sparkles): персонаж-иконка из
+          // Material в монохромном скине читалась бы как из другой системы.
           avatar: custom
-              ? Icon(Icons.person, size: 15, color: accent)
+              ? AppIcon(AppIcons.sparkles, size: 15, color: t.accent)
               : null,
-          label: Text(label),
+          label: Text(label,
+              style: t.caption.copyWith(color: t.textPrimary)),
           onPressed: onTap,
         ),
       ),
@@ -233,13 +289,11 @@ class _BandRow extends StatelessWidget {
     required this.band,
     required this.min,
     required this.max,
-    required this.accent,
   });
 
   final AndroidEqualizerBand band;
   final double min;
   final double max;
-  final Color accent;
 
   String _freq(double hz) =>
       hz >= 1000 ? '${(hz / 1000).toStringAsFixed(hz % 1000 == 0 ? 0 : 1)}кГц'
@@ -247,19 +301,20 @@ class _BandRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = skinOf(context).tokens;
     return StreamBuilder<double>(
       stream: band.gainStream,
       initialData: band.gain,
       builder: (context, snap) {
         final gain = (snap.data ?? band.gain).clamp(min, max);
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          padding: EdgeInsets.symmetric(horizontal: t.space16, vertical: t.space2),
           child: Row(
             children: [
               SizedBox(
                 width: 56,
                 child: Text(_freq(band.centerFrequency),
-                    style: TextStyle(fontSize: 12, color: AppColors.white60)),
+                    style: t.caption.copyWith(color: t.textSecondary)),
               ),
               Expanded(
                 child: Slider(
@@ -273,7 +328,7 @@ class _BandRow extends StatelessWidget {
                 width: 44,
                 child: Text('${gain.toStringAsFixed(1)} дБ',
                     textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11, color: AppColors.white45)),
+                    style: t.micro.copyWith(color: t.textTertiary)),
               ),
             ],
           ),

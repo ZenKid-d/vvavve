@@ -28,7 +28,7 @@ void main() {
     await tester.pumpWidget(_wrap());
     expect(find.text('to be cleared'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byTooltip('Очистить'));
     await tester.pumpAndSettle();
 
     expect(find.text('to be cleared'), findsNothing);
