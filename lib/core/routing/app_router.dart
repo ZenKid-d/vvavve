@@ -8,6 +8,7 @@ import '../../design/tokens/design_tokens.dart';
 import '../../features/artist/followed_artists_screen.dart';
 import '../../features/charts/charts_screen.dart';
 import '../../features/player/equalizer_screen.dart';
+import '../../features/player/now_playing_screen.dart';
 import '../../features/settings/appearance_screen.dart';
 import '../../features/settings/about_screen.dart';
 import '../../features/settings/blacklist_screen.dart';
@@ -138,7 +139,7 @@ CustomTransitionPage<void> _playerPage(
   final tokens = skin.tokens;
   return CustomTransitionPage<void>(
     key: state.pageKey,
-    child: skin.buildPlayer(context),
+    child: const NowPlayingScreen(),
     transitionDuration: tokens.motionDuration,
     reverseTransitionDuration: tokens.motionDuration,
     transitionsBuilder: skin.id == SkinId.ipod ? _ipodAppear : _iosSlide,

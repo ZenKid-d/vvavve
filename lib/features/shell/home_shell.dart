@@ -13,7 +13,12 @@ import '../../domain/models/source_type.dart';
 import '../../domain/models/track.dart';
 import '../../playback/playback_controller.dart';
 import '../../sync/sync_service.dart' show SyncService;
+import '../home/home_screen.dart';
+import '../library/library_screen.dart';
 import '../onboarding/onboarding_screen.dart';
+import '../search/search_screen.dart';
+import '../settings/settings_screen.dart';
+import '../stats/stats_screen.dart';
 import 'mini_player_shell.dart';
 
 /// Текущий раздел оболочки.
@@ -187,7 +192,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   ),
                   child: KeyedSubtree(
                     key: ValueKey(section),
-                    child: skin.buildSection(context, section),
+                    child: _sectionBody(section),
                   ),
                 ),
               ),
@@ -204,6 +209,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 }
+
+/// Какой тонкий экран показывает раздел.
+///
+/// Контент разделов строится здесь, а не в скине: экраны (HomeScreen и
+/// соседи) сами выбирают вёрстку по скину через SkinScope, поэтому
+/// добавление скина не требует править этот switch, а добавление раздела —
+/// одна строка здесь и одна в SkinSection.
+Widget _sectionBody(SkinSection section) => switch (section) {
+      SkinSection.home => const HomeScreen(),
+      SkinSection.search => const SearchScreen(),
+      SkinSection.library => const LibraryScreen(),
+      SkinSection.stats => const StatsScreen(),
+    };
 
 /// Экран настроек: собирается скином, как и разделы.
 ///
@@ -230,7 +248,7 @@ class SkinSettingsRoute extends ConsumerWidget {
                 // когда его открыли не через роутер (тест, превью).
                 onBack: () => Navigator.of(context).maybePop(),
               ),
-              Expanded(child: skin.buildSettings(context)),
+              const Expanded(child: SettingsScreen()),
               const ShellMiniPlayer(),
             ],
           ),

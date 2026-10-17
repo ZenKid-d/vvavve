@@ -174,6 +174,12 @@ void main() {
             : MaterialApp.router(routerConfig: router),
       ));
       await tester.pump();
+      // Контент разделов — настоящие сетевые провайдеры: в тестовом окружении
+      // запросы дают 400, и youtube_explode планирует retry-таймеры (500 мс+).
+      // Прогоняем время, чтобы они отработали и не роняли тест инвариантом
+      // «Timer is still pending».
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
     }
 
     testWidgets('переключение раздела меняет sectionIndex и экран',
@@ -186,7 +192,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(tester.widget<IosTabBar>(find.byType(IosTabBar)).currentIndex, 1);
-      expect(find.text('iOS — Поиск'), findsOneWidget);
+      // Контент раздела — настоящий экран поиска, не заглушка.
+      expect(find.text('Поиск по всем сервисам'), findsOneWidget);
     });
 
     testWidgets('смена темы не сбрасывает выбранный раздел', (tester) async {
@@ -203,8 +210,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
+      // Рамка сменилась на меню iPod, раздел при этом тот же (заголовок
+      // «Медиатека» в меню, реальная медиатека под ним).
       expect(find.byType(IpodMenuBar), findsOneWidget);
-      expect(find.text('iPod — Медиатека'), findsOneWidget);
+      expect(find.text(SkinSection.library.title), findsOneWidget);
     });
 
     testWidgets('шестерёнка меню iPod открывает экран настроек',

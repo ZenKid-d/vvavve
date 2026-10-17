@@ -321,20 +321,27 @@ void main() {
       expect(bar.onBack, isNull);
     });
 
-    testWidgets('buildSection маршрутизирует во все экраны', (tester) async {
+    testWidgets('оболочки рисуют рамку для обоих скинов', (tester) async {
       for (final skin in [ios, ipod]) {
-        for (final section in SkinSection.values) {
-          await tester.pumpWidget(
-            MaterialApp(
-              home: Builder(
-                builder: (context) => skin.buildSection(context, section),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) => skin.buildShell(
+                context,
+                const SizedBox.expand(),
+                sectionIndex: 0,
+                onSection: (_) {},
+                onSettings: () {},
               ),
             ),
-          );
-          expect(find.textContaining(skin.id == SkinId.ios ? 'iOS' : 'iPod'),
-              findsWidgets,
-              reason: '${skin.id.name}/${section.name}: экран не отрисован');
-        }
+          ),
+        );
+        // Рамка скина: нижняя панель у iOS, меню с бегущей строкой у iPod.
+        expect(
+          find.byType(skin.id == SkinId.ios ? IosTabBar : IpodMenuBar),
+          findsOneWidget,
+          reason: '${skin.id.name}: каркас не отрисован',
+        );
       }
     });
 

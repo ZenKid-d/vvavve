@@ -25,11 +25,14 @@ extension SkinSectionX on SkinSection {
       };
 }
 
-/// Скин = «как выглядит и ведёт себя экран».
+/// Скин = «как выглядит каркас приложения».
 ///
-/// Экраны НЕ наследуют этот класс: скин собирает их сам (см. buildHome и
-/// соседей). Так один и тот же экран может жить в двух оболочках, а данные
-/// и логика остаются в контроллерах.
+/// Контент разделов скин не строит: каждый раздел уже живёт тонким экраном
+/// (HomeScreen/SearchScreen/LibraryScreen/StatsScreen/SettingsScreen/
+/// NowPlayingScreen), который сам выбирает вёрстку по скину через SkinScope.
+/// Скин отвечает только за каркас навигации — что переключает разделы и как
+/// оно выглядит (панель iOS против меню iPod). Поэтому добавление третьего
+/// скина — один файл, а не правки по экранным.
 abstract class Skin {
   SkinId get id;
 
@@ -45,22 +48,6 @@ abstract class Skin {
     required ValueChanged<int> onSection,
     required VoidCallback onSettings,
   });
-
-  Widget buildHome(BuildContext context);
-  Widget buildSearch(BuildContext context);
-  Widget buildLibrary(BuildContext context);
-  Widget buildStats(BuildContext context);
-  Widget buildSettings(BuildContext context);
-  Widget buildPlayer(BuildContext context);
-
-  /// Экран раздела по индексу — мост между оболочкой и экранами.
-  Widget buildSection(BuildContext context, SkinSection section) =>
-      switch (section) {
-        SkinSection.home => buildHome(context),
-        SkinSection.search => buildSearch(context),
-        SkinSection.library => buildLibrary(context),
-        SkinSection.stats => buildStats(context),
-      };
 }
 
 /// Доступ к скину из контекста: `SkinScope.of(context)`.
