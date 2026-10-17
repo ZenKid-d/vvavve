@@ -2,7 +2,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../design/icons/app_icons.dart';
-import '../theme/app_colors.dart';
 import '../theme/theme_settings.dart';
 
 /// Обложка с плейсхолдером и скруглением. Если URL нет — рисуем градиент-заглушку.
@@ -89,7 +88,9 @@ class Artwork extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
       ),
-      child: AppIcon(AppIcons.musicNote, color: AppColors.white45, size: 28),
+      child: const AppIcon(AppIcons.musicNote,
+        color: Colors.white54,
+        size: 28),
     );
   }
 }

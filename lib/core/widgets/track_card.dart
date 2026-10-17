@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../design/skin.dart';
 import '../../domain/models/track.dart';
-import '../theme/app_colors.dart';
 import '../track_menu.dart';
 import 'artwork.dart';
 import 'service_badge.dart';
@@ -72,7 +72,10 @@ class _TrackCardState extends State<TrackCard> {
                 t.artist,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: AppColors.white45),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: SkinScope.maybeOf(context)?.tokens.textTertiary ??
+                        Colors.white54),
               ),
             ],
           ),
@@ -104,8 +107,7 @@ class TrackRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return ListTile(
       onTap: onTap,
-      onLongPress:
-          onLongPress ?? () => showTrackMenu(context, ref, track),
+      onLongPress: onLongPress ?? () => showTrackMenu(context, ref, track),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: SizedBox(
         width: 52,
@@ -127,14 +129,13 @@ class TrackRow extends ConsumerWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontWeight: FontWeight.w500,
-            color: active
-                ? Theme.of(context).colorScheme.primary
-                : Colors.white,
+            color:
+                active ? Theme.of(context).colorScheme.primary : Colors.white,
           )),
       subtitle: Text(track.artist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12, color: AppColors.white45)),
+          style: const TextStyle(fontSize: 12, color: Colors.white54)),
       trailing: trailing,
     );
   }

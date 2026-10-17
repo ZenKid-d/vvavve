@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
-import '../../core/theme/app_colors.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/track_card.dart';
+import '../../design/skin.dart';
 import '../../domain/models/track.dart';
 import 'artist_screen.dart';
 
@@ -45,7 +45,7 @@ class FollowedArtistsScreen extends ConsumerWidget {
                   'Вы пока ни за кем не следите. Откройте страницу артиста и '
                   'нажмите «Следить».',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.white45),
+                  style: TextStyle(color: SkinScope.maybeOf(context)?.tokens.textTertiary ?? Colors.white54),
                 ),
               ),
             )
@@ -122,14 +122,14 @@ class _NewReleases extends ConsumerWidget {
       error: (_, __) => Padding(
         padding: const EdgeInsets.all(20),
         child: Text('Не удалось загрузить новинки',
-            style: TextStyle(color: AppColors.white45)),
+            style: TextStyle(color: SkinScope.maybeOf(context)?.tokens.textTertiary ?? Colors.white54)),
       ),
       data: (tracks) {
         if (tracks.isEmpty) {
           return Padding(
             padding: const EdgeInsets.all(20),
             child: Text('Новинок не нашлось',
-                style: TextStyle(color: AppColors.white45)),
+                style: TextStyle(color: SkinScope.maybeOf(context)?.tokens.textTertiary ?? Colors.white54)),
           );
         }
         return Column(
