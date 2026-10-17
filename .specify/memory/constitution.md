@@ -1,50 +1,86 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# roundds Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Локальность прежде всего
+Приложение обязано полностью работать без входа и без сети: лайки,
+плейлисты, история и статистика живут на устройстве. Облако
+(Firebase/Firestore) — только добавка поверх работающего локального
+слоя, и его недоступность не может ломать ни одну фичу. Рационально:
+приложение используется в РФ, где облако регулярно недоступно, а
+синхронизация — опциональное удобство, не требование.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Честный интерфейс
+UI никогда не притворяется работающим. Если функция не действует
+(нет ключа Last.fm, источник выключен, облако недоступно) — чип/строка
+блокируется или подписывается причиной, а не изображает переключатель.
+Ошибки попадают в Diagnostics, а не глотаются молча: единственное
+исключение — подтверждённо некритичные операции, и такие места
+обязаны нести комментарий «почему не критично». Рационально: молча
+проглоченная ошибка или фальшивый тумблер хуже честного ограничения.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Скины вместо ветвлений
+Оформление — две полные реализации интерфейса `Skin` (iOS, iPod),
+а не набор `if (theme == ...)` по коду. Экраны читают цвета, шрифты,
+радиусы и иконки только из `DesignTokens` и `AppIcons`; хардкод
+`Color(0x…)`, `Icons.*`, `BorderRadius.circular`, `fontSize` в скин-слое
+запрещён. Данные и логика экранов общие; дублируется только вёрстка.
+Новые экраны обязаны следовать этому правилу, старые переводятся по мере
+касания. Рационально: третий скин не должен переписывать приложение,
+а расползающиеся константы — главный источник визуальных регрессий.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Ошибки не роняют воспроизведение
+Источники по природе хрупкие (неофициальные API, протухающие токены,
+троттлинг). Сбой одного источника, кэша или БД не может останавливать
+плеер или ронять экран: деградация (пустой ряд, поиск без одного
+источника, рекомендации без дизлайков) вместо падения. Каждый такой
+`catch` обязан либо логировать в Diagnostics, либо нести комментарий
+обоснования. Сбои записи данных (библиотека, синхронизация) — не молча:
+ретрай или видимый статус. Рационально: плеер — продукт, всё остальное
+его обрамление.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Проверяемое поведение
+Любая нетривиальная логика (парсеры источников, слияние синхронизации,
+скоринг рекомендаций, пагинация поиска) сопровождается тестом, который
+падает при её поломке. CI (`ci.yml`) держит барьер: `flutter analyze`
+без ошибок, `flutter test` зелёный, debug-APK собирается. Рефакторинг
+без изменения поведения не допускается мержить с падающими тестами.
+Рационально: проект опирается на хрупкие внешние API — без тестов
+каждое их обновление превращается в ручную диагностику в поле.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Quality Gates
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- `flutter analyze` — ноль ошибок и ноль предупреждений; инфо-фиксы
+  через `dart fix --apply`.
+- `flutter test` — весь сьют зелёный; новые ветки логики получают тест.
+- Debug-сборка APK в CI ловит поломки, которые analyze пропускает
+  (kernel snapshot, конфликты нативных зависимостей).
+- Релизы идут через `release.yml` с тегами `vX.Y.Z`; перед релизом —
+  ручная проверка на устройстве (см. ROADMAP.md, раздел про KGP).
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Design System
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- Токены — единственный источник цветов/шрифтов/радиусов
+  (`lib/design/tokens/`), иконки — `AppIcons` (рисуются painter'ом,
+  у каждой есть Unicode-запасник).
+- Общие примитивы (`lib/design/widgets/blocks.dart`) не знают про
+  скины и читают токены; скин-специфичные виджеты живут в
+  `design/ios/` и `design/ipod/`.
+- Скин переключается через `SkinController` (prefs-ключ `ap_skin`),
+  значение по умолчанию — iOS. Новые варианты SkinId добавляются
+  только в конец перечисления.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- Конституция старше любого плана/спеки: противоречащий пункт —
+  повод менять план, а не тихо нарушать принцип.
+- Поправки документируются в этом файле с инкрементом версии
+  (MAJOR — удаление/переосмысление принципа, MINOR — новый принцип
+  или существенное расширение, PATCH — формулировки).
+- Compliance-проверка — часть ревью: `/speckit-analyze` и
+  `/speckit-converge` сверяют задачи и код с принципами;
+  расхождения фиксируются в артефактах фичи, не в воздухе.
+- Рантайм-гайд по процессу разработки: README.md (архитектура),
+  docs/SYNC.md (синхронизация), docs/DESIGN_IPOS_IPOD.md (дизайн).
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-10-17 | **Last Amended**: 2026-10-17
