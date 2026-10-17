@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/aggregator.dart';
 import '../data/sources/soundcloud_source.dart';
+import '../data/sources/local_files_source.dart';
 import '../data/sources/vk_source.dart';
 import '../data/sources/yandex_source.dart';
 import '../data/sources/youtube_music_source.dart';
@@ -153,6 +154,10 @@ final yandexSourceProvider =
 final vkSourceProvider =
     Provider<VkSource>((ref) => VkSource(ref.read(dioProvider)));
 
+/// Источник локальных файлов: синглтон на приложение — кэш скана живёт в нём.
+final localFilesSourceProvider =
+    Provider<LocalFilesSource>((ref) => LocalFilesSource());
+
 /// Агрегатор создаётся ОДИН раз (плеер держит на него ссылку).
 /// Список включённых источников меняется через SettingsController.setEnabled.
 final aggregatorProvider = Provider<Aggregator>((ref) {
@@ -161,6 +166,7 @@ final aggregatorProvider = Provider<Aggregator>((ref) {
     SourceType.soundcloud: ref.read(soundcloudSourceProvider),
     SourceType.yandex: ref.read(yandexSourceProvider),
     SourceType.vk: ref.read(vkSourceProvider),
+    SourceType.local: ref.read(localFilesSourceProvider),
   });
 });
 

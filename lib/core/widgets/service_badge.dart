@@ -33,6 +33,8 @@ class ServiceBadge extends StatelessWidget {
       SourceType.soundcloud => FontAwesomeIcons.soundcloud,
       SourceType.yandex => FontAwesomeIcons.yandex,
       SourceType.vk => FontAwesomeIcons.vk,
+      // У «файлов» нет бренда — нейтральная нота вместо логотипа.
+      SourceType.local => FontAwesomeIcons.music,
     };
     return FaIcon(icon, size: size * 0.55, color: source.onColor);
   }

@@ -616,6 +616,24 @@ class _PlaylistsView extends ConsumerWidget {
 
     return ListView(
       children: [
+        // Свои файлы: строка-вход, а не «умная подборка» — треклист собирается
+        // лениво сканом, счётчик неизвестен до скана.
+        SkinMenuRow(
+          title: 'На устройстве',
+          subtitle: 'Аудио из Music / Download',
+          leading: AppIcons.musicNote,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => TrackListScreen(
+              title: 'На устройстве',
+              loader: () async {
+                final src = ref.read(localFilesSourceProvider);
+                final tracks = await src.scan();
+                src.invalidate(); // следующий вход пересканирует по-свежему
+                return tracks;
+              },
+            ),
+          )),
+        ),
         for (final s in smart)
           SkinMenuRow(
             title: s.title,

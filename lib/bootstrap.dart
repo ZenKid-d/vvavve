@@ -24,6 +24,7 @@ import 'data/recs/recs_db.dart';
 import 'data/recs/recs_store.dart';
 import 'data/sources/soundcloud_source.dart';
 import 'data/sources/vk_source.dart';
+import 'data/sources/local_files_source.dart';
 import 'data/sources/yandex_source.dart';
 import 'data/sources/youtube_music_source.dart';
 import 'domain/models/source_type.dart';
@@ -80,12 +81,16 @@ Future<void> bootstrapApp() async {
   };
   final yandex = YandexSource(dio);
   final vk = VkSource(dio);
+  final localFiles = LocalFilesSource();
 
   final aggregator = Aggregator({
     SourceType.youtube: youtube,
     SourceType.soundcloud: soundcloud,
     SourceType.yandex: yandex,
     SourceType.vk: vk,
+    // Свои файлы — пятый источник: скан файловой системы ленивый и
+    // не ходит в сеть, поэтому он стоит вне сетевых коннекторов.
+    SourceType.local: localFiles,
   });
 
   final downloads = DownloadsController(prefs, dio, aggregator);

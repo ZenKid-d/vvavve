@@ -2,30 +2,30 @@
 
 ## Backlog (from ROADMAP.md) - Priority Features
 
-### 1. Real Crossfade with Two Players (Medium) — PARTIAL (fade-lite, not true dual-player)
+### 1. Real Crossfade with Two Players (Medium) - PARTIAL (fade-lite, not true dual-player)
 - [x] Crossfade duration setting (in settings)
 - [x] Volume fade in/out on a single player near track boundaries (`_fadeTimer`
       in `audio_handler.dart`), compatible with gapless
-- [ ] Actual dual-player crossfade (two AudioPlayer instances overlapping) —
-      still requires the DualAudioPlayer rework tracked in ROADMAP.md backlog
+- [ ] Actual dual-player crossfade (two AudioPlayer instances overlapping) -
+      декомпозиция в ROADMAP.md (Бэклог), требует рефакторинг ядра
 
-### 2. Local Files Support (Medium)
-- [ ] Add READ_MEDIA_AUDIO permission to AndroidManifest.xml
-- [ ] Create LocalFileSource implementing MusicSource interface
-- [ ] Implement MediaStore scanning for audio files
-- [ ] Add local files to Aggregator
-- [ ] Create LocalFilesScreen in library feature
-- [ ] Add local file metadata extraction (title, artist, album, artwork, duration)
-- [ ] Support common formats: MP3, FLAC, OGG, M4A, WAV
-- [ ] Add "Local Files" source toggle in settings
+### 2. Local Files Support (Medium) - DONE
+- [x] Manifest: READ_MEDIA_AUDIO (13+) + READ_EXTERNAL_STORAGE (≤32)
+- [x] LocalFilesSource implementing MusicSource (dart:io-скан, кэш, права)
+- [x] Aggregator wiring + синглтон-провайдер
+- [x] Метадата из имени файла («Артист — Название»), 8 расширений аудио
+- [x] Вкладка «На устройстве» в медиатеке с lazy-сканом и invalidate
+- [x] Переключатель источника появился сам (SourceTypeValues экстерна)
+- [x] 11 тестов: разбор имён, скан/фильтры, права, resolve/delete
+- [ ] MediaStore-скан (MethodChannel) — optional, см. ROADMAP
+- [ ] ID3-теги (опционально; сейчас имя файла)
+- [x] Тумблер источника в Настройках (SourceType.local появился сам, 
+      подсказка в SettingsCopy.sourceHint)
 
-### 3. Album Pages (Low)
-- [ ] Create AlbumScreen with track list
-- [ ] Add album route to app_router
-- [ ] Make album name clickable in NowPlayingScreen and TrackCard
-- [ ] Fetch album tracks from source (YT Music, SoundCloud, Yandex)
-- [ ] Add album artwork display
-- [ ] Implement "Play Album" / "Shuffle Album" actions
+### 3. Album Pages (Low) - DONE (было готово раньше, ROADMAP отставал)
+- [x] AlbumScreen с треклистом + лайк/дизлайк альбома, радио, скачать
+- [x] Открытие из карточек, меню плеера, артиста, мини-плейлистов (6 мест)
+- [x] Треки альбома из нативного источника (Яндекс) с фолбэком на поиск
 
 ### 4. Home Widget / Notification Tile (Medium)
 - [ ] Add home_widget dependency

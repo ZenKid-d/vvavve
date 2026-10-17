@@ -47,6 +47,8 @@ abstract final class SettingsCopy {
         SourceType.yandex => 'Играет внутри. Нужен токен аккаунта (риск бана).',
         SourceType.vk =>
           'Играет внутри. Нужен токен клиента VK с доступом к аудио (риск бана).',
+        SourceType.local =>
+          'Аудио-файлы с устройства (Music/Download). Права запросятся при первом скане.',
       };
 }
 

@@ -8,6 +8,7 @@ enum SourceType {
   soundcloud,
   yandex,
   vk,
+  local,
 }
 
 extension SourceTypeX on SourceType {
@@ -16,6 +17,7 @@ extension SourceTypeX on SourceType {
         SourceType.soundcloud => 'SoundCloud',
         SourceType.yandex => 'Яндекс Музыка',
         SourceType.vk => 'VK Музыка',
+        SourceType.local => 'На устройстве',
       };
 
   /// Короткая подпись для бейджа.
@@ -24,6 +26,7 @@ extension SourceTypeX on SourceType {
         SourceType.soundcloud => 'SoundCloud',
         SourceType.yandex => 'Яндекс',
         SourceType.vk => 'VK',
+        SourceType.local => 'Файлы',
       };
 
   Color get color => switch (this) {
@@ -31,6 +34,9 @@ extension SourceTypeX on SourceType {
         SourceType.soundcloud => const Color(0xFFFF5500),
         SourceType.yandex => const Color(0xFFFFCC00),
         SourceType.vk => const Color(0xFF0077FF),
+        // Нейтральный серый: свои файлы — не бренд, чтобы не спорить
+        // с бейджами сервисов.
+        SourceType.local => const Color(0xFF5F6368),
       };
 
   /// Цвет текста поверх [color] (жёлтый Яндекса требует тёмного текста).
