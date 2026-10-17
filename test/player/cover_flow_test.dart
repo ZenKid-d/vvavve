@@ -82,7 +82,8 @@ void main() {
 
     test('медленное смещение скоростью флингом не считается', () {
       expect(coverFlowIndexForOffset(offset: 1.9, count: 10, velocity: 0.4), 2);
-      expect(coverFlowIndexForOffset(offset: 1.1, count: 10, velocity: -0.4), 1);
+      expect(
+          coverFlowIndexForOffset(offset: 1.1, count: 10, velocity: -0.4), 1);
     });
 
     test('края очереди зажимаются, а не закольцовываются', () {
@@ -165,17 +166,18 @@ void main() {
         containsAll(items.sublist(2, 7).map((t) => t.uid)),
         reason: 'видны треки вокруг текущего',
       );
-      expect(uids, isNot(contains(items[1].uid)), reason: 'дальний слева не рисуем');
+      expect(uids, isNot(contains(items[1].uid)),
+          reason: 'дальний слева не рисуем');
 
       // Ближе всех к центру потока стоит обложка текущего трека.
       final centerX = tester.getCenter(find.byType(IosCoverFlow)).dx;
       final nearest = <String, double>{};
       for (var i = 0; i < uids.length; i++) {
-        final dx =
-            (tester.getRect(finder.at(i)).center.dx - centerX).abs();
+        final dx = (tester.getRect(finder.at(i)).center.dx - centerX).abs();
         nearest[uids[i]] = dx;
       }
-      final center = nearest.entries.reduce((a, b) => a.value <= b.value ? a : b);
+      final center =
+          nearest.entries.reduce((a, b) => a.value <= b.value ? a : b);
       expect(center.key, items[4].uid);
     });
 
@@ -193,6 +195,57 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(picked, [4], reason: 'свайп влево — следующий трек');
+    });
+
+    // Регресс на замер: при p > 0 в Flutter дальние карточки (z < 0) получали
+    // w < 1 и РАСТОЛИ вместо уменьшения — центральная обложка оказывалась
+    // самой узкой (замер: 259 px против 332 px у дальних). Плюс перенос по X
+    // шёл после поворота, из-за чего дальние карточки схлопывались к центру и
+    // перекрещивались с ближними. Теперь ширины монотонно убывают от центра.
+    testWidgets('дальние обложки мельче центральной, центральная — в центре',
+        (tester) async {
+      final items = [for (var i = 0; i < 8; i++) track('$i')];
+      await pump(tester, items: items, index: 3);
+
+      final finder = find.byType(Artwork);
+      final widthByUid = <String, double>{};
+      final centreByUid = <String, double>{};
+      final zoneCentre = tester.getCenter(find.byType(IosCoverFlow)).dx;
+      for (var i = 0; i < finder.evaluate().length; i++) {
+        final w = tester.widget<Artwork>(finder.at(i));
+        final r = tester.getRect(finder.at(i));
+        widthByUid[w.seed!] = r.width;
+        centreByUid[w.seed!] = r.center.dx;
+      }
+
+      final centreWidth = widthByUid[items[3].uid]!;
+      expect(
+        centreWidth,
+        greaterThan(widthByUid[items[4].uid]!),
+        reason: 'сосед должен быть уже текущего',
+      );
+      // Соседи слева и справа равны по замеру (расхождение — только погрешность
+      // float), а дальний — заметно мельче ближнего.
+      expect(
+        (widthByUid[items[2].uid]! - widthByUid[items[4].uid]!).abs(),
+        lessThan(0.5),
+        reason: 'веер симметричен',
+      );
+      expect(
+        widthByUid[items[1].uid]!,
+        lessThan(widthByUid[items[2].uid]!),
+        reason: 'чем дальше от центра, тем мельче (перспектива вглубь)',
+      );
+      expect(
+        (centreByUid[items[3].uid]! - zoneCentre).abs(),
+        lessThan(1.0),
+        reason: 'текущая обложка стоит ровно в центре зоны',
+      );
+      expect(
+        centreByUid[items[2].uid]!,
+        lessThan(centreByUid[items[4].uid]!),
+        reason: 'левая обложка левее правой — веер не схлопывается',
+      );
     });
 
     testWidgets('смена трека снаружи докатывает поток и поднимает обложку',
@@ -235,8 +288,10 @@ void main() {
         nearest[w.seed!] =
             (tester.getRect(finder.at(i)).center.dx - centerX).abs();
       }
-      final center = nearest.entries.reduce((a, b) => a.value <= b.value ? a : b);
-      expect(center.key, items[1].uid, reason: 'поток докатился до нового трека');
+      final center =
+          nearest.entries.reduce((a, b) => a.value <= b.value ? a : b);
+      expect(center.key, items[1].uid,
+          reason: 'поток докатился до нового трека');
     });
   });
 }

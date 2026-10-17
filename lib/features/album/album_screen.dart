@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/widgets/mini_player.dart';
-import '../../core/widgets/track_card.dart';
+import '../common/track_row.dart';
 import '../../design/icons/app_icons.dart';
 import '../../design/skin.dart';
 import '../../domain/models/album_result.dart';
@@ -79,8 +79,8 @@ class AlbumScreen extends ConsumerWidget {
       ),
       bottomNavigationBar: const SafeArea(top: false, child: MiniPlayer()),
       body: tracks.when(
-        loading: () => Center(
-            child: CircularProgressIndicator(color: t.accent)),
+        loading: () =>
+            Center(child: CircularProgressIndicator(color: t.accent)),
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -97,7 +97,7 @@ class AlbumScreen extends ConsumerWidget {
           }
           return ListView.builder(
             itemCount: list.length,
-            itemBuilder: (_, i) => TrackRow(
+            itemBuilder: (_, i) => SkinTrackRow(
               track: list[i],
               onTap: () => playTrack(ref, context, list[i], queue: list),
             ),

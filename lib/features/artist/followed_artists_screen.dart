@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/widgets/mini_player.dart';
-import '../../core/widgets/track_card.dart';
+import '../common/track_row.dart';
 import '../../design/skin.dart';
 import '../../domain/models/track.dart';
 import 'artist_screen.dart';
@@ -16,8 +16,7 @@ final followedNewReleasesProvider = FutureProvider<List<Track>>((ref) async {
   final seen = <String>{};
   for (final a in artists) {
     try {
-      final r =
-          await ref.read(aggregatorProvider).search('$a new music 2025');
+      final r = await ref.read(aggregatorProvider).search('$a new music 2025');
       for (final t in r.take(6)) {
         if (seen.add(t.uid)) out.add(t);
       }
@@ -45,7 +44,9 @@ class FollowedArtistsScreen extends ConsumerWidget {
                   'Вы пока ни за кем не следите. Откройте страницу артиста и '
                   'нажмите «Следить».',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: SkinScope.maybeOf(context)?.tokens.textTertiary ?? Colors.white54),
+                  style: TextStyle(
+                      color: SkinScope.maybeOf(context)?.tokens.textTertiary ??
+                          Colors.white54),
                 ),
               ),
             )
@@ -54,8 +55,8 @@ class FollowedArtistsScreen extends ConsumerWidget {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
                   child: Text('Вы следите',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w500)),
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                 ),
                 SizedBox(
                   height: 104,
@@ -67,8 +68,9 @@ class FollowedArtistsScreen extends ConsumerWidget {
                     itemBuilder: (_, i) {
                       final a = followed[i];
                       return GestureDetector(
-                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                            builder: (_) => ArtistScreen(artist: a))),
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => ArtistScreen(artist: a))),
                         child: SizedBox(
                           width: 72,
                           child: Column(
@@ -100,8 +102,8 @@ class FollowedArtistsScreen extends ConsumerWidget {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
                   child: Text('🆕 Новинки от ваших артистов',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w500)),
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                 ),
                 _NewReleases(),
               ],
@@ -122,20 +124,24 @@ class _NewReleases extends ConsumerWidget {
       error: (_, __) => Padding(
         padding: const EdgeInsets.all(20),
         child: Text('Не удалось загрузить новинки',
-            style: TextStyle(color: SkinScope.maybeOf(context)?.tokens.textTertiary ?? Colors.white54)),
+            style: TextStyle(
+                color: SkinScope.maybeOf(context)?.tokens.textTertiary ??
+                    Colors.white54)),
       ),
       data: (tracks) {
         if (tracks.isEmpty) {
           return Padding(
             padding: const EdgeInsets.all(20),
             child: Text('Новинок не нашлось',
-                style: TextStyle(color: SkinScope.maybeOf(context)?.tokens.textTertiary ?? Colors.white54)),
+                style: TextStyle(
+                    color: SkinScope.maybeOf(context)?.tokens.textTertiary ??
+                        Colors.white54)),
           );
         }
         return Column(
           children: [
             for (final t in tracks)
-              TrackRow(
+              SkinTrackRow(
                 track: t,
                 onTap: () => playTrack(ref, context, t, queue: tracks),
               ),

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/playlist_actions.dart' show showAddToPlaylistSheet;
 import '../../core/providers.dart';
-import '../../core/widgets/track_card.dart';
+import '../common/track_row.dart';
 import '../../design/icons/app_icons.dart';
 import '../../design/skin.dart';
 import '../../design/skin_registry.dart';
@@ -221,7 +221,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 ),
               ),
               for (final t in pc.queue)
-                TrackRow(
+                SkinTrackRow(
                   track: t,
                   active: t.uid == current.uid,
                   onTap: () {
@@ -301,8 +301,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               builder: (context, ref, _) {
                 final timer = ref.watch(sleepTimerProvider);
                 final rem = timer.remaining;
-                final afterTrack =
-                    ref.watch(playbackProvider).sleepAfterTrack;
+                final afterTrack = ref.watch(playbackProvider).sleepAfterTrack;
                 final active = timer.active || afterTrack;
                 final subtitle = afterTrack
                     ? 'До конца трека'
@@ -322,7 +321,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                           },
                           child: Text(
                             'Стоп',
-                            style: tokens.caption.copyWith(color: tokens.accent),
+                            style:
+                                tokens.caption.copyWith(color: tokens.accent),
                           ),
                         )
                       : null,
@@ -341,7 +341,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
 
   void _sleepSheet() {
     final tokens = _skin(ref).tokens;
-    const options = {'15 минут': 15, '30 минут': 30, '45 минут': 45, '1 час': 60};
+    const options = {
+      '15 минут': 15,
+      '30 минут': 30,
+      '45 минут': 45,
+      '1 час': 60
+    };
     showModalBottomSheet(
       context: context,
       backgroundColor: tokens.surface,

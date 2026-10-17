@@ -98,7 +98,8 @@ class IosCoverFlow extends StatefulWidget {
 class _IosCoverFlowState extends State<IosCoverFlow>
     // Два контроллера (прокрутка и подъём обложки), поэтому нужен
     // TickerProviderStateMixin, а не SingleTickerProviderStateMixin.
-    with TickerProviderStateMixin {
+    with
+        TickerProviderStateMixin {
   /// Смещение потока в карточках: 0 — первый трек, 2.4 — между вторым и третьим.
   ///
   /// Именно контроллер, а не поле + setState: пока идёт свайп или анимация
@@ -154,7 +155,8 @@ class _IosCoverFlowState extends State<IosCoverFlow>
 
     if (_scroll.value != target) {
       // Смена трека не свайпом: поднимаем новую карточку снизу/сверху.
-      if (widget.index != old.index && _fromSwipe != _clampIndex(widget.index)) {
+      if (widget.index != old.index &&
+          _fromSwipe != _clampIndex(widget.index)) {
         _lift.duration = widget.tokens.motionDuration;
         _lift.forward(from: 0);
       }
@@ -275,7 +277,15 @@ class _IosCoverFlowState extends State<IosCoverFlow>
       // Карточки уходят за края экрана — обрезать их нельзя, иначе сосед
       // исчезает ровно в тот момент, когда до него хочется дотянуться.
       clipBehavior: Clip.none,
-      children: [for (final i in visible) _card(i, offset, card)],
+      // Порядок отрисовки — по удалённости от центра, дальние под nearer: иначе
+      // сосед, идущий позже в списке, перекрывал бы текущий трек, и «что играет
+      // сейчас» приходилось бы угадывать.
+      children: [
+        for (final i in [
+          ...visible
+        ]..sort((a, b) => (b - offset).abs().compareTo((a - offset).abs())))
+          _card(i, offset, card),
+      ],
     );
   }
 
@@ -286,13 +296,19 @@ class _IosCoverFlowState extends State<IosCoverFlow>
 
     final matrix = Matrix4.identity()
       // Перспектива: без неё поворот соседей выглядит как плоская раскладка.
-      ..setEntry(3, 2, _perspective)
+      //
+      // Знак МИНУС обязателен: Flutter делит координаты на w = 1 + p·z, поэтому
+      // при p > 0 уходящая вглубь карточка (z < 0) получает w < 1 и наоборот
+      // РАСТЁТ — дальние обложки вылезали из-под центральной и залезали на
+      // подписи. С минусом w > 1, и дальняя карточка честно мельчает.
+      ..setEntry(3, 2, -_perspective)
+      // Разводим по X ДО поворота: иначе перенос попадает внутрь повёрнутой
+      // системы, дальние карточки схлопываются к центру и перекрещиваются с
+      // ближними (в замерах левый дальний уезжал правее левого соседа).
+      ..translateByDouble(rel * card * _stepShare, 0, 0, 1)
       // Сосед справа (rel > 0) поворачивается правым краем «от» зрителя, и
       // его ближний к центру край выходит вперёд — так же, как в iOS.
       ..rotateY(rel * _turn)
-      // ...и разводится по X уже в повёрнутой системе: получается веер,
-      // сходящийся к точке схода, а не просто сдвинутая копия.
-      ..translateByDouble(rel * card * _stepShare, 0, 0, 1)
       // Дальние карточки уходят в глубину — иначе они того же размера, что
       // центральная, и глаз не понимает, где «сейчас играет».
       ..translateByDouble(0, 0, -depth * card * _depthShare, 1);

@@ -4,11 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/play_action.dart';
 import '../../core/providers.dart';
 import '../../core/widgets/mini_player.dart';
-import '../../core/widgets/track_card.dart';
 import '../../core/widgets/track_download_status.dart';
 import '../../design/icons/app_icons.dart';
 import '../../design/skin.dart';
 import '../../domain/models/track.dart';
+import 'skin_controls.dart';
+import 'track_row.dart';
 
 /// Универсальный экран со списком треков: статический список или загрузчик.
 /// Кнопки «Слушать всё» и «Радио», мини-плеер внизу.
@@ -96,35 +97,31 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
                 )
               : (tracks == null || tracks.isEmpty)
                   ? Center(
-                      child:
-                          Text('Пусто', style: TextStyle(color: t.textSecondary)))
+                      child: Text('Пусто',
+                          style: TextStyle(color: t.textSecondary)))
                   : Column(
                       children: [
                         Padding(
-                          padding:
-                              const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                           child: Row(
                             children: [
                               Expanded(
-                                child: FilledButton.icon(
+                                child: SkinActionButton(
+                                  label: 'Слушать всё',
+                                  icon: AppIcons.play,
+                                  filled: true,
                                   onPressed: () => playTrack(
                                       ref, context, tracks.first,
                                       queue: tracks),
-                                  icon: AppIcon(AppIcons.play,
-                                      size: 18, color: t.accentOn),
-                                  label: const Text('Слушать всё'),
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              OutlinedButton.icon(
+                              SkinActionButton(
+                                label: 'Радио',
+                                icon: AppIcons.radio,
                                 onPressed: () => ref
                                     .read(playbackProvider)
                                     .startRadio(tracks.first, tracks),
-                                style: OutlinedButton.styleFrom(
-                                    foregroundColor: t.accent),
-                                icon: AppIcon(AppIcons.radio,
-                                    size: 18, color: t.accent),
-                                label: const Text('Радио'),
                               ),
                             ],
                           ),
@@ -132,7 +129,7 @@ class _TrackListScreenState extends ConsumerState<TrackListScreen> {
                         Expanded(
                           child: ListView.builder(
                             itemCount: tracks.length,
-                            itemBuilder: (_, i) => TrackRow(
+                            itemBuilder: (_, i) => SkinTrackRow(
                               track: tracks[i],
                               onTap: () => playTrack(ref, context, tracks[i],
                                   queue: tracks),

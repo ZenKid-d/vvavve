@@ -9,7 +9,7 @@ import '../../core/providers.dart';
 import '../../core/widgets/artwork.dart';
 import '../../core/widgets/mini_player.dart';
 import '../../core/widgets/service_badge.dart';
-import '../../core/widgets/track_card.dart';
+import '../common/track_row.dart';
 import '../../design/icons/app_icons.dart';
 import '../../design/skin.dart';
 import '../../domain/models/artist_profile.dart';
@@ -95,7 +95,9 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
       if (album == null || album.trim().isEmpty) continue;
       map.putIfAbsent(album, () => []).add(t);
     }
-    return [for (final e in map.entries) _AlbumGroup(name: e.key, tracks: e.value)];
+    return [
+      for (final e in map.entries) _AlbumGroup(name: e.key, tracks: e.value)
+    ];
   }
 
   void _toggleFollow(bool wasFollowing) {
@@ -167,11 +169,13 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
           backgroundColor: t.background,
           leading: const _BackButton(),
           flexibleSpace: FlexibleSpaceBar(
-            titlePadding: const EdgeInsetsDirectional.only(start: 56, bottom: 14),
+            titlePadding:
+                const EdgeInsetsDirectional.only(start: 56, bottom: 14),
             title: Text(widget.artist,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             background: _Banner(url: bannerUrl, seed: widget.artist),
           ),
         ),
@@ -215,9 +219,10 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> {
           else
             SliverList(
               delegate: SliverChildBuilderDelegate(
-                (context, i) => TrackRow(
+                (context, i) => SkinTrackRow(
                   track: tracks[i],
-                  onTap: () => playTrack(ref, context, tracks[i], queue: tracks),
+                  onTap: () =>
+                      playTrack(ref, context, tracks[i], queue: tracks),
                 ),
                 childCount: tracks.length,
               ),
@@ -235,8 +240,8 @@ class _BackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => IconButton(
         icon: AppIcon(AppIcons.back,
-            color: SkinScope.maybeOf(context)?.tokens.textPrimary ??
-                Colors.white),
+            color:
+                SkinScope.maybeOf(context)?.tokens.textPrimary ?? Colors.white),
         onPressed: () => Navigator.of(context).maybePop(),
       );
 }
@@ -256,7 +261,8 @@ class _BackBar extends StatelessWidget {
               child: Text(title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -291,8 +297,7 @@ class _Banner extends StatelessWidget {
               end: Alignment.bottomCenter,
               colors: [
                 Colors.black.withValues(alpha: 0.1),
-                SkinScope.maybeOf(context)?.tokens.background ??
-                    Colors.black,
+                SkinScope.maybeOf(context)?.tokens.background ?? Colors.black,
               ],
             ),
           ),
@@ -418,8 +423,7 @@ class _Header extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: trackCount == 0 ? null : onPlayAll,
                   style: FilledButton.styleFrom(
-                      backgroundColor: t.accent,
-                      foregroundColor: t.accentOn),
+                      backgroundColor: t.accent, foregroundColor: t.accentOn),
                   icon: AppIcon(AppIcons.play, size: 20, color: t.accentOn),
                   label: Text(l10n.artistPlayAll),
                 ),
@@ -433,8 +437,9 @@ class _Header extends StatelessWidget {
               const SizedBox(width: 8),
               _RoundAction(
                 icon: AppIcons.bell,
-                tooltip:
-                    following ? l10n.artistFollowingTooltip : l10n.artistFollowTooltip,
+                tooltip: following
+                    ? l10n.artistFollowingTooltip
+                    : l10n.artistFollowTooltip,
                 onTap: onToggleFollow,
                 active: following,
               ),
@@ -470,7 +475,8 @@ class _RoundAction extends StatelessWidget {
         color: active ? t.accent.withValues(alpha: 0.18) : t.surfaceAlt,
       ),
       child: IconButton(
-        icon: AppIcon(icon, size: 20, color: active ? t.accent : t.textSecondary),
+        icon:
+            AppIcon(icon, size: 20, color: active ? t.accent : t.textSecondary),
         tooltip: tooltip,
         onPressed: onTap,
       ),
@@ -519,12 +525,14 @@ class _AlbumTile extends StatelessWidget {
     final seed = group.tracks.first;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Artwork(seed.artworkUrl, size: 52, seed: seed.uid, radius: t.radiusMd),
+      leading: Artwork(seed.artworkUrl,
+          size: 52, seed: seed.uid, radius: t.radiusMd),
       title: Text(group.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(l10n.artistTracksCount(group.tracks.length),
-          style: TextStyle(color: t.textSecondary, fontSize: t.caption.fontSize)),
-      onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => AlbumScreen(seed: seed))),
+          style:
+              TextStyle(color: t.textSecondary, fontSize: t.caption.fontSize)),
+      onTap: () => Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => AlbumScreen(seed: seed))),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:roundds/core/providers.dart';
+import 'package:roundds/core/widgets/player_visualizer.dart';
 import 'package:roundds/design/ipod/ipod_widgets.dart';
 import 'package:roundds/design/tokens/design_tokens.dart';
 import 'package:roundds/design/tokens/ios_tokens.dart';
@@ -132,6 +133,70 @@ void main() {
 
       expect(find.text('Поток недоступен'), findsOneWidget);
       expect(find.text('Повтор'), findsOneWidget);
+    });
+
+    // Регресс на замер: до правки колонка липла к верху и оставляла внизу
+    // 237 px пустоты из 780. Теперь панель инструментов должна доходить
+    // примерно до низа экрана.
+    testWidgets('iPod: содержимое распределено по экрану, а не липнет к верху',
+        (tester) async {
+      await pump(tester, IpodPlayerView(ui: ui(IpodTokens.instance)));
+
+      final bottom = tester.getRect(find.byType(PlayerTools)).bottom;
+      expect(bottom, greaterThan(560),
+          reason: 'низ экрана должен быть занят, а не пустовать');
+    });
+
+    // Регресс на замер: на паузе 32 полоски по 3 px читались как пунктирная
+    // линия над панелью управления. Спектр на паузе не рисуется вовсе.
+    testWidgets('iPod: на паузе спектр не рисуется пунктиром', (tester) async {
+      final paused = PlayerUi(
+        tokens: ui(IpodTokens.instance).tokens,
+        track: const Track(
+          id: 't1',
+          title: 'Группа крови',
+          artist: 'Кино',
+          source: SourceType.youtube,
+        ),
+        queue: const [],
+        index: 0,
+        direction: 1,
+        isPlaying: false,
+        isLoading: false,
+        shuffleOn: false,
+        repeatActive: false,
+        repeatOne: false,
+        duration: const Duration(minutes: 3),
+        error: null,
+        liked: false,
+        disliked: false,
+        downloaded: false,
+        downloading: false,
+        downloadProgress: null,
+        service: SourceType.youtube,
+        originService: null,
+        onClose: () {},
+        onMore: () {},
+        onLyrics: () {},
+        onQueue: () {},
+        onDownload: () {},
+        onAddToPlaylist: () {},
+        onLike: () {},
+        onDislike: () {},
+        onArtist: () {},
+        onAlbum: () {},
+        onSelectIndex: (_) {},
+        onTogglePlay: () {},
+        onPrev: () {},
+        onNext: () {},
+        onShuffle: () {},
+        onCycleRepeat: () {},
+        onSeek: (_) {},
+        onRetry: () {},
+      );
+      await pump(tester, IpodPlayerView(ui: paused));
+
+      expect(find.byType(PlayerVisualizer), findsNothing);
     });
   });
 

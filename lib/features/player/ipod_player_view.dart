@@ -48,65 +48,78 @@ class IpodPlayerView extends StatelessWidget {
             return SingleChildScrollView(
               // Прокрутка — страховка для низких экранов и крупного шрифта:
               // лучше подпись уедет вниз, чем ряд управления станет недоступен.
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: tokens.space16,
-                  vertical: tokens.space8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _Cover(
-                      tokens: tokens,
-                      url: ui.track.artworkUrl,
-                      seed: ui.track.uid,
-                      size: cover,
-                    ),
-                    SizedBox(height: tokens.space16),
-                    _LcdLabels(ui: ui),
-                    SizedBox(height: tokens.space8),
-                    ServicePill(ui.service, origin: ui.originService),
-                    if (ui.error != null) ...[
-                      SizedBox(height: tokens.space8),
-                      PlayerErrorBar(
+              child: ConstrainedBox(
+                // Колонка короткая, а экран высокий: без этого ограничения она
+                // липла к верхнему краю и оставляла внизу пустую треть экрана
+                // (замер: 237 px на 780). Теперь она занимает весь экран и
+                // центрируется, а на низком экране прокрутка всё ещё работает.
+                constraints: BoxConstraints(minHeight: c.maxHeight),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.space16,
+                    vertical: tokens.space8,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.max,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _Cover(
                         tokens: tokens,
-                        message: ui.error!,
-                        onRetry: ui.onRetry,
+                        url: ui.track.artworkUrl,
+                        seed: ui.track.uid,
+                        size: cover,
                       ),
+                      SizedBox(height: tokens.space16),
+                      _LcdLabels(ui: ui),
+                      SizedBox(height: tokens.space8),
+                      ServicePill(ui.service, origin: ui.originService),
+                      if (ui.error != null) ...[
+                        SizedBox(height: tokens.space8),
+                        PlayerErrorBar(
+                          tokens: tokens,
+                          message: ui.error!,
+                          onRetry: ui.onRetry,
+                        ),
+                      ],
+                      SizedBox(height: tokens.space8),
+                      // Спектр живёт только здесь: на монохромном экране он
+                      // читается как «идёт звук», а в iOS место освободил Cover Flow.
+                      SizedBox(
+                        height: _spectrumHeight,
+                        child: ui.isPlaying
+                            ? PlayerVisualizer(
+                                playing: true,
+                                color: tokens.accent,
+                                height: _spectrumHeight,
+                              )
+                            : null,
+                      ),
+                      SizedBox(height: tokens.space8),
+                      _ControlsPanel(ui: ui),
+                      SizedBox(height: tokens.space12),
+                      IpodPlayerProgress(
+                        tokens: tokens,
+                        duration: ui.duration,
+                        onSeek: ui.onSeek,
+                      ),
+                      SizedBox(height: tokens.space8),
+                      PlayerTools(
+                        tokens: tokens,
+                        liked: ui.liked,
+                        disliked: ui.disliked,
+                        downloaded: ui.downloaded,
+                        downloading: ui.downloading,
+                        downloadProgress: ui.downloadProgress,
+                        onLyrics: ui.onLyrics,
+                        onQueue: ui.onQueue,
+                        onDownload: ui.onDownload,
+                        onAddToPlaylist: ui.onAddToPlaylist,
+                        onLike: ui.onLike,
+                        onDislike: ui.onDislike,
+                      ),
+                      SizedBox(height: tokens.space12),
                     ],
-                    SizedBox(height: tokens.space8),
-                    // Спектр живёт только здесь: на монохромном экране он
-                    // читается как «идёт звук», а в iOS место освободил Cover Flow.
-                    PlayerVisualizer(
-                      playing: ui.isPlaying,
-                      color: tokens.accent,
-                      height: _spectrumHeight,
-                    ),
-                    SizedBox(height: tokens.space8),
-                    _ControlsPanel(ui: ui),
-                    SizedBox(height: tokens.space12),
-                    IpodPlayerProgress(
-                      tokens: tokens,
-                      duration: ui.duration,
-                      onSeek: ui.onSeek,
-                    ),
-                    SizedBox(height: tokens.space8),
-                    PlayerTools(
-                      tokens: tokens,
-                      liked: ui.liked,
-                      disliked: ui.disliked,
-                      downloaded: ui.downloaded,
-                      downloading: ui.downloading,
-                      downloadProgress: ui.downloadProgress,
-                      onLyrics: ui.onLyrics,
-                      onQueue: ui.onQueue,
-                      onDownload: ui.onDownload,
-                      onAddToPlaylist: ui.onAddToPlaylist,
-                      onLike: ui.onLike,
-                      onDislike: ui.onDislike,
-                    ),
-                    SizedBox(height: tokens.space12),
-                  ],
+                  ),
                 ),
               ),
             );
@@ -294,7 +307,8 @@ class IpodPlayerProgress extends ConsumerWidget {
                             color: tokens.separator,
                           ),
                           Container(
-                            width: c.maxWidth * (fraction == 0 ? 0.0 : fraction),
+                            width:
+                                c.maxWidth * (fraction == 0 ? 0.0 : fraction),
                             height: _trackHeight,
                             color: tokens.accent,
                           ),
